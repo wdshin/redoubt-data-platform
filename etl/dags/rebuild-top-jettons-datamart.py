@@ -4,7 +4,7 @@ from airflow.providers.postgres.operators.postgres import PostgresOperator
 from datetime import datetime, timedelta
 
 @dag(
-    schedule_interval=None,
+    schedule_interval="*/10 * * * *",
     start_date=datetime(2023, 1, 1),
     catchup=False,
     concurrency=1,
@@ -33,7 +33,7 @@ def rebuild_top_jettons_datamart():
             total_holders bigint                              
         );""",
             """
-        CREATE INDEX top_jettons_datamart_build_idx
+        CREATE INDEX IF NOT EXISTS top_jettons_datamart_build_idx
         ON top_jettons_datamart (build_time DESC, market_volume_rank ASC);            
             """
         ]
