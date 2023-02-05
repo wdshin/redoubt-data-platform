@@ -4,7 +4,7 @@
 
 ETL based on Airflow. Jobs list:
 
-TODO
+* [rebuild-top-jettons-datamart](etl/dags/rebuild-top-jettons-datamart.py) - creates datamart with top jettons by market volume
 
 ## Backend
 
