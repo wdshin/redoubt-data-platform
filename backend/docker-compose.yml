@@ -6,6 +6,10 @@ services:
       - 8082:8082
     env_file:
       - db_config.env
+    volumes:
+      - ./cache:/var/lib/cache
+    environment:
+      API_CACHE_DIR: /var/lib/cache/
 networks:
   default:
     name: ton-indexer_default
