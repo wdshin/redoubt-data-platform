@@ -8,4 +8,12 @@ ETL based on Airflow. Jobs list:
 
 ## Backend
 
-TODO
+To deploy:
+
+```shell
+cd backend
+docker compose up -d
+```
+                     
+Methods:
+* ``GET /v1/jettons/top`` returns datamart with top Jettons

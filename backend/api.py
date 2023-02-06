@@ -41,7 +41,7 @@ class TokenInfo:
         )
 
 
-@app.get("/api/v1/jettons/top")
+@app.get("/v1/jettons/top")
 async def root():
     cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
