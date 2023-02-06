@@ -4,7 +4,7 @@ from airflow.providers.postgres.operators.postgres import PostgresOperator
 from datetime import datetime, timedelta
 
 @dag(
-    schedule_interval="*/10 * * * *",
+    schedule_interval="*/20 * * * *",
     start_date=datetime(2023, 1, 1),
     catchup=False,
     concurrency=1,
@@ -47,6 +47,65 @@ def rebuild_top_jettons_datamart():
         ]
     )
 
+    refresh_current_balances = PostgresOperator(
+        task_id="refresh_current_balances",
+        postgres_conn_id="ton_db",
+        sql=[
+            """
+            create materialized view if not exists mview_jetton_balances
+            as
+            with mapping as (
+              select distinct "owner", address as  wallet_address from jetton_wallets
+            ),
+            balances as (
+              select jw."owner", jw.address as wallet_address, jw.balance, last_tx_lt, rank() over(partition by owner, jw.address order by last_tx_lt desc) as balance_rank from jetton_wallets jw
+              join account_state using(state_id)
+            ),
+            latest as (
+              select * from balances where balance_rank = 1
+            ), transfer_out as (
+              select latest.owner, jt.source_wallet as wallet_address,  m.created_lt, -1 * amount as delta from jetton_transfers jt 
+              join messages m on jt.msg_id  = m.msg_id 
+              join latest on latest.wallet_address = jt.source_wallet
+              where m.created_lt  > latest.last_tx_lt and jt.successful  = true
+            ), transfer_in as (
+              select latest.owner, mapping.wallet_address,  m.created_lt, amount as delta from jetton_transfers jt 
+              join messages m on jt.msg_id  = m.msg_id 
+              join jetton_wallets src_wallet on src_wallet.address = jt.source_wallet
+              join mapping on mapping.owner = jt.destination_owner
+              join jetton_wallets dst_wallet on dst_wallet.address = mapping.wallet_address and src_wallet.jetton_master = dst_wallet.jetton_master 
+              join latest on latest.wallet_address = dst_wallet.address
+              where m.created_lt  > latest.last_tx_lt and jt.successful  = true
+            ), mint as (
+               select latest.owner, latest.wallet_address, m.created_lt, amount as delta  from jetton_mint jm 
+               join latest on latest.wallet_address = jm.wallet
+               join messages m on jm.msg_id  = m.msg_id
+               where m.created_lt  > latest.last_tx_lt and jm.successful = true
+            ), burn as (
+               select latest.owner, latest.wallet_address, m.created_lt, -1 * amount as delta  from jetton_burn jb
+               join latest on latest.wallet_address = jb.wallet
+               join messages m on jb.msg_id  = m.msg_id
+               where m.created_lt  > latest.last_tx_lt and jb.successful = true
+            ), changes as (
+              select owner, 'balance' as type, wallet_address,last_tx_lt as lt, balance as delta from balances
+              union all
+              select owner, 'transfer_in' as type, wallet_address, created_lt as lt, delta from transfer_in
+              union all
+              select owner, 'transfer_out' as type, wallet_address, created_lt as lt, delta from transfer_out
+              union all
+              select owner, 'mint' as type, wallet_address, created_lt as lt, delta from mint
+              union all
+              select owner, 'burn' as type, wallet_address, created_lt as lt, delta from burn
+            )  
+            select owner, wallet_address, sum(delta) as balance from changes
+            group by 1, 2    
+            """,
+            """
+            refresh materialized view mview_jetton_balances;                    
+            """
+        ]
+    )
+
     add_current_top_jettons = PostgresOperator(
         task_id="add_current_top_jettons",
         postgres_conn_id="ton_db",
@@ -56,6 +115,7 @@ def rebuild_top_jettons_datamart():
           creation_time, symbol, price, market_volume_ton,
           market_volume_rank, active_owners_24, total_holders           
         )
+ 
         with enriched as ( -- add jetton symbol
           select swaps.*, jm_src.symbol as src, jm_dst.symbol as dst from mview_dex_swaps swaps
           join jetton_master jm_src on jm_src.address  = swaps.swap_src_token
@@ -92,33 +152,53 @@ def rebuild_top_jettons_datamart():
           select token, sum(amount_ton) / sum(amount_token) as price_raw  from last_trades_ranks
           where rank < 4 -- last 3 trades
           group by 1
-        ), min_data as (
-          select jm.address as token, to_timestamp(min(t.utime)) as creation_time
-          from jetton_master jm   
-          join messages m on m.destination  = jm.address  
-          join transactions t on t.tx_id = m.in_tx_id 
-          group by 1
         ), datamart as (
-          select mv.*, md.creation_time, jm.symbol, case
+          select mv.*, jm.symbol, case
             when coalesce(jm.decimals, 9) = 9 then price_raw
             when jm.decimals < 9 then price_raw / (pow(10, 9 - jm.decimals))
             else price_raw * (pow(10, 9 - jm.decimals))
           end as price, jm.decimals  from market_volume_rank as mv
           join jetton_master jm on jm.address  = mv.token 
           join prices on prices.token = mv.token
-          join min_data md on md.token = mv.token
           where market_volume_rank > 100 or market_volume_ton > 10
+        ), target_tokens as (
+          select distinct token as address from datamart
+		), min_data as (
+          select address as token, to_timestamp(min(t.utime)) as creation_time
+          from jetton_master jm   
+          join target_tokens using(address)
+          join messages m on m.destination  = jm.address  
+          join transactions t on t.tx_id = m.out_tx_id 
+          group by 1), 
+        total_holders as (
+          select target_tokens.address as token, count(distinct jw."owner") as total_holders from mview_jetton_balances b
+          join jetton_wallets jw on jw.address = b.wallet_address
+          join target_tokens on target_tokens.address = jw.jetton_master
+          where b.balance > 0
+		  group by 1
+        ), active_owners as (
+          select  target_tokens.address as token, count(distinct jetton_owner) as active_owners_24 from jetton_transfers jt
+          join jetton_wallets jw on jw.address = jt.source_wallet
+          join target_tokens on target_tokens.address = jw.jetton_master
+          join messages m using(msg_id)
+          join transactions tx on tx.tx_id = m.out_tx_id
+          cross join unnest(array[jt.source_owner, jt.destination_owner]) as t(jetton_owner)
+          where to_timestamp(tx.utime) > now() - interval '1 day' and jt.successful = true
+          group by 1
         )
         select  now() as build_time, token as address, 
-          creation_time, symbol, price,  
+          md.creation_time, symbol, price,  
           market_volume_ton, market_volume_rank, 
-          0 as active_owners_24, 0 as total_holders -- TODO   
-        from datamart                                
+          ao.active_owners_24, th.total_holders   
+        from datamart 
+        join min_data md using(token)
+        join total_holders th using(token)
+        join active_owners ao using(token)                         
             """
         ]
     )
 
-    create_tables >>  refresh_dex_swaps >> add_current_top_jettons
+    create_tables >>  refresh_dex_swaps >> refresh_current_balances >> add_current_top_jettons
 
 
 
