@@ -20,12 +20,9 @@ def rebuild_top_jettons_datamart():
         CREATE TABLE IF NOT EXISTS top_jettons_datamart (
             id bigserial NOT NULL primary key,
             build_time timestamp with time zone NOT NULL, 
-            address varchar UNIQUE,
+            address varchar,
             creation_time timestamp with time zone NOT NULL,
             symbol varchar, 
-            name varchar,
-            description varchar,
-            image_url varchar,
             price decimal(40, 20),
             market_volume_ton decimal(40, 0),
             market_volume_rank bigint,
@@ -56,7 +53,7 @@ def rebuild_top_jettons_datamart():
         sql=[
             """
         insert into top_jettons_datamart(build_time, address, 
-          creation_time, symbol, name, description, image_url, market_volume_ton,
+          creation_time, symbol, price, market_volume_ton,
           market_volume_rank, active_owners_24, total_holders           
         )
         with enriched as ( -- add jetton symbol
@@ -102,7 +99,7 @@ def rebuild_top_jettons_datamart():
           join transactions t on t.tx_id = m.in_tx_id 
           group by 1
         ), datamart as (
-          select mv.*, md.creation_time, jm.symbol, jm.name, jm.description, case
+          select mv.*, md.creation_time, jm.symbol, case
             when coalesce(jm.decimals, 9) = 9 then price_raw
             when jm.decimals < 9 then price_raw / (pow(10, 9 - jm.decimals))
             else price_raw * (pow(10, 9 - jm.decimals))
@@ -113,8 +110,7 @@ def rebuild_top_jettons_datamart():
           where market_volume_rank > 100 or market_volume_ton > 10
         )
         select  now() as build_time, token as address, 
-          creation_time, symbol, name, description, 
-          '' as image_url, -- TODO 
+          creation_time, symbol, price,  
           market_volume_ton, market_volume_rank, 
           0 as active_owners_24, 0 as total_holders -- TODO   
         from datamart                                
