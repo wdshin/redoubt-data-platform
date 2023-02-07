@@ -172,22 +172,37 @@ def rebuild_top_jettons_datamart():
         )
  
         with enriched as ( -- add jetton symbol
-          select swaps.*, jm_src.symbol as src, jm_dst.symbol as dst from mview_dex_swaps swaps
+          select swaps.*, 
+          case 
+	          when swap_src_token = 'EQBPAVa6fjMigxsnHF33UQ3auufVrg2Z8lBZTY9R-isfjIFr' then 'TON' -- JTON
+	          when swap_src_token = 'EQDQoc5M3Bh8eWFephi9bClhevelbZZvWhkqdo80XuY_0qXv' then 'TON' -- WTON
+	          when swap_src_token = 'EQCM3B12QK1e4yZSf8GtBRT0aLMNyEsBc_DhVfRRtOEffLez' then 'TON' -- pTON
+	          when swap_src_token = 'EQCajaUU1XXSAjTD-xOV7pE49fGtg4q8kF3ELCOJtGvQFQ2C' then 'TON' -- WTON from megaton
+	          else jm_src.symbol end
+	      as src,
+          case 
+   	          when swap_dst_token = 'EQBPAVa6fjMigxsnHF33UQ3auufVrg2Z8lBZTY9R-isfjIFr' then 'TON' -- JTON
+	          when swap_dst_token = 'EQDQoc5M3Bh8eWFephi9bClhevelbZZvWhkqdo80XuY_0qXv' then 'TON' -- WTON
+	          when swap_dst_token = 'EQCM3B12QK1e4yZSf8GtBRT0aLMNyEsBc_DhVfRRtOEffLez' then 'TON' -- pTON
+	          when swap_dst_token = 'EQCajaUU1XXSAjTD-xOV7pE49fGtg4q8kF3ELCOJtGvQFQ2C' then 'TON' -- WTON from megaton
+	          else jm_dst.symbol end
+	      as dst 
+          from mview_dex_swaps swaps
           join jetton_master jm_src on jm_src.address  = swaps.swap_src_token
           join jetton_master jm_dst on jm_dst.address  = swaps.swap_dst_token
           where swap_time  > now() - interval '1 day'
-        ), trades_in_ton as ( -- only DeDust swaps for now
+        ), trades_in_ton as (
         select
-          swap_time, swap_src_owner as swap_owner, swap_src_token as token,
+          platform, swap_time, swap_src_owner as swap_owner, swap_src_token as token,
           swap_src_amount as amount_token, swap_dst_amount as amount_ton,
           'sell' as direction
-          from enriched where dst = 'JTON'
+          from enriched where dst = 'TON'
         union all
         select
-          swap_time, swap_src_owner as swap_owner, swap_dst_token as token,
+          platform, swap_time, swap_src_owner as swap_owner, swap_dst_token as token,
           swap_dst_amount as amount_token, swap_src_amount as amount_ton,
           'buy' as direction
-          from enriched where src = 'JTON'
+          from enriched where src = 'TON'
         ), market_volume as  (
           select token, round(sum(amount_ton) / 1000000000) as market_volume_ton from trades_in_ton
           group by 1
@@ -197,12 +212,12 @@ def rebuild_top_jettons_datamart():
         select
           swap_time, swap_src_token as token, swap_src_amount as amount_token, swap_dst_amount as amount_ton,
           'sell' as direction, rank() over(partition by swap_src_token order by swap_time desc) as rank
-          from enriched where dst = 'JTON'
+          from enriched where dst = 'TON'
         union all
         select
           swap_time, swap_dst_token as token, swap_dst_amount as amount_token, swap_src_amount as amount_ton,
           'buy' as direction, rank() over(partition by swap_dst_token order by swap_time desc) as rank
-          from enriched where src = 'JTON'
+          from enriched where src = 'TON'
         ), prices as (
           select token, sum(amount_ton) / sum(amount_token) as price_raw  from last_trades_ranks
           where rank < 4 -- last 3 trades
@@ -248,7 +263,7 @@ def rebuild_top_jettons_datamart():
         from datamart 
         join min_data md using(token)
         join total_holders th using(token)
-        join active_owners ao using(token)                         
+        join active_owners ao using(token)                        
             """
         ]
     )
