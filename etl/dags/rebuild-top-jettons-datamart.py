@@ -108,10 +108,7 @@ def rebuild_top_jettons_datamart():
             """
             create materialized view if not exists mview_jetton_balances
             as
-            with mapping as (
-              select distinct "owner", address as  wallet_address from jetton_wallets
-            ),
-            balances as (
+            with balances as (
               select jw."owner", jw.address as wallet_address, jw.balance, last_tx_lt, rank() over(partition by owner, jw.address order by last_tx_lt desc) as balance_rank from jetton_wallets jw
               join account_state using(state_id)
             ),
@@ -122,10 +119,9 @@ def rebuild_top_jettons_datamart():
               join latest on latest.wallet_address = jt.source_wallet
               where jt.created_lt  > latest.last_tx_lt and jt.successful  = true
             ), transfer_in as (
-              select latest.owner, mapping.wallet_address,  jt.created_lt, amount as delta from jetton_transfers jt
+              select latest.owner, dst_wallet.address as wallet_address,  jt.created_lt, amount as delta from jetton_transfers jt
               join jetton_wallets src_wallet on src_wallet.address = jt.source_wallet
-              join mapping on mapping.owner = jt.destination_owner
-              join jetton_wallets dst_wallet on dst_wallet.address = mapping.wallet_address and src_wallet.jetton_master = dst_wallet.jetton_master
+              join jetton_wallets dst_wallet on dst_wallet.owner = jt.destination_owner and src_wallet.jetton_master = dst_wallet.jetton_master
               join latest on latest.wallet_address = dst_wallet.address
               where jt.created_lt  > latest.last_tx_lt and jt.successful  = true
             ), mint as (
@@ -141,7 +137,7 @@ def rebuild_top_jettons_datamart():
               union all
               select owner, 'transfer_in' as type, wallet_address, created_lt as lt, delta from transfer_in
               union all
-              select owner, 'transfer_out' as type, wallet_address, created_lt as lt, delta from transfer_out
+               select owner, 'transfer_out' as type, wallet_address, created_lt as lt, delta from transfer_out
               union all
               select owner, 'mint' as type, wallet_address, created_lt as lt, delta from mint
               union all
