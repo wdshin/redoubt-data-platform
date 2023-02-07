@@ -85,7 +85,7 @@ def rebuild_top_jettons_datamart():
                  else jt1.sub_op = pool.sub_op end
              and pool.type = 'in'
             )
-            select swap_time, 
+            select platform, swap_time, 
             swap_src_owner,  swap_src_token, swap_src_amount, 
             swap_dst_owner,  swap_dst_token, swap_dst_amount
             from swaps 
