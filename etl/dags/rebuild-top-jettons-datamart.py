@@ -60,15 +60,12 @@ def rebuild_top_jettons_datamart():
             create materialized view if not exists mview_dex_swaps
             as
             with transfers as (
-              select m.created_lt, jw.jetton_master, to_timestamp(tx.utime) as swap_time, jt.*  from jetton_transfers jt 
-              join jetton_wallets jw on jw.address =jt.source_wallet 
-              join messages m on m.msg_id  = jt.msg_id  
-              join transactions tx on tx.tx_id  = m.in_tx_id 
-              where -- to_timestamp(tx.utime) > now() - interval '1 day' and 
-              jt.successful  = true
+              select jw.jetton_master, to_timestamp(jt.utime) as swap_time, jt.*  from jetton_transfers jt
+              join jetton_wallets jw on jw.address =jt.source_wallet
+              where jt.successful  = true
             ),
             swaps as (
-             select pool.platform, jt1.msg_id, jt1.originated_msg_id,
+             select pool_in.platform, jt1.msg_id, jt1.originated_msg_id,
                jt1.swap_time,
                jt1.source_owner as swap_src_owner, jt1.jetton_master as swap_src_token, 
                jt1.amount as swap_src_amount, jt1.query_id as swap_src_query_id, jt1.created_lt as swap_src_lt,
@@ -79,16 +76,21 @@ def rebuild_top_jettons_datamart():
              from transfers jt1 
              join transfers jt2 on jt1.originated_msg_id = jt2.originated_msg_id  and jt1.msg_id != jt2.msg_id and 
                jt1.query_id = jt2.query_id and jt1.source_owner = jt2.destination_owner and jt1.jetton_master != jt2.jetton_master 
-             join dex_pools_info pool on pool.address = jt1.destination_owner and 
+             join dex_pools_info pool_in on pool_in.address = jt1.destination_owner and
              case 
-                 when pool.sub_op is null then true 
-                 else jt1.sub_op = pool.sub_op end
-             and pool.type = 'in'
+                 when pool_in.sub_op is null then true
+                 else jt1.sub_op = pool_in.sub_op end
+             and pool_in.type = 'in'
+             join dex_pools_info pool_out on pool_out.address = jt2.source_owner and
+             case
+                 when pool_out.sub_op is null then true
+                 else jt1.sub_op = pool_out.sub_op end
+             and pool_out.type = 'out' and pool_in.platform = pool_out.platform
             )
             select msg_id, originated_msg_id, platform, swap_time, 
             swap_src_owner,  swap_src_token, swap_src_amount, 
             swap_dst_owner,  swap_dst_token, swap_dst_amount
-            from swaps 
+            from swaps
             """,
             """
             create unique index if not exists mview_dex_swaps_msg_id_idx on mview_dex_swaps(msg_id);            
@@ -116,28 +118,24 @@ def rebuild_top_jettons_datamart():
             latest as (
               select * from balances where balance_rank = 1
             ), transfer_out as (
-              select latest.owner, jt.source_wallet as wallet_address,  m.created_lt, -1 * amount as delta from jetton_transfers jt 
-              join messages m on jt.msg_id  = m.msg_id 
+              select latest.owner, jt.source_wallet as wallet_address,  jt.created_lt, -1 * amount as delta from jetton_transfers jt
               join latest on latest.wallet_address = jt.source_wallet
-              where m.created_lt  > latest.last_tx_lt and jt.successful  = true
+              where jt.created_lt  > latest.last_tx_lt and jt.successful  = true
             ), transfer_in as (
-              select latest.owner, mapping.wallet_address,  m.created_lt, amount as delta from jetton_transfers jt 
-              join messages m on jt.msg_id  = m.msg_id 
+              select latest.owner, mapping.wallet_address,  jt.created_lt, amount as delta from jetton_transfers jt
               join jetton_wallets src_wallet on src_wallet.address = jt.source_wallet
               join mapping on mapping.owner = jt.destination_owner
-              join jetton_wallets dst_wallet on dst_wallet.address = mapping.wallet_address and src_wallet.jetton_master = dst_wallet.jetton_master 
+              join jetton_wallets dst_wallet on dst_wallet.address = mapping.wallet_address and src_wallet.jetton_master = dst_wallet.jetton_master
               join latest on latest.wallet_address = dst_wallet.address
-              where m.created_lt  > latest.last_tx_lt and jt.successful  = true
+              where jt.created_lt  > latest.last_tx_lt and jt.successful  = true
             ), mint as (
-               select latest.owner, latest.wallet_address, m.created_lt, amount as delta  from jetton_mint jm 
+               select latest.owner, latest.wallet_address, jm.created_lt, amount as delta  from jetton_mint jm
                join latest on latest.wallet_address = jm.wallet
-               join messages m on jm.msg_id  = m.msg_id
-               where m.created_lt  > latest.last_tx_lt and jm.successful = true
+               where jm.created_lt  > latest.last_tx_lt and jm.successful = true
             ), burn as (
-               select latest.owner, latest.wallet_address, m.created_lt, -1 * amount as delta  from jetton_burn jb
+               select latest.owner, latest.wallet_address, jb.created_lt, -1 * amount as delta  from jetton_burn jb
                join latest on latest.wallet_address = jb.wallet
-               join messages m on jb.msg_id  = m.msg_id
-               where m.created_lt  > latest.last_tx_lt and jb.successful = true
+               where jb.created_lt  > latest.last_tx_lt and jb.successful = true
             ), changes as (
               select owner, 'balance' as type, wallet_address,last_tx_lt as lt, balance as delta from balances
               union all
@@ -150,7 +148,8 @@ def rebuild_top_jettons_datamart():
               select owner, 'burn' as type, wallet_address, created_lt as lt, delta from burn
             )  
             select owner, wallet_address, sum(delta) as balance from changes
-            group by 1, 2    
+            group by 1, 2
+            order by owner
             """,
             """
             create unique index if not exists mview_jetton_balances_id_idx on mview_jetton_balances(wallet_address);
@@ -250,10 +249,8 @@ def rebuild_top_jettons_datamart():
           select  target_tokens.address as token, count(distinct jetton_owner) as active_owners_24 from jetton_transfers jt
           join jetton_wallets jw on jw.address = jt.source_wallet
           join target_tokens on target_tokens.address = jw.jetton_master
-          join messages m using(msg_id)
-          join transactions tx on tx.tx_id = m.out_tx_id
           cross join unnest(array[jt.source_owner, jt.destination_owner]) as t(jetton_owner)
-          where to_timestamp(tx.utime) > now() - interval '1 day' and jt.successful = true
+          where jt.utime  > extract(epoch from now() - interval '1 day') and jt.successful = true
           group by 1
         )
         select  now() as build_time, token as address, 
@@ -263,7 +260,7 @@ def rebuild_top_jettons_datamart():
         from datamart 
         join min_data md using(token)
         join total_holders th using(token)
-        join active_owners ao using(token)                        
+        join active_owners ao using(token)
             """
         ]
     )
