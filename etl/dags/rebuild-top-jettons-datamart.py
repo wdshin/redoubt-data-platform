@@ -68,7 +68,7 @@ def rebuild_top_jettons_datamart():
               jt.successful  = true
             ),
             swaps as (
-             select pool.platform, jt1.originated_msg_id,
+             select pool.platform, jt1.msg_id, jt1.originated_msg_id,
                jt1.swap_time,
                jt1.source_owner as swap_src_owner, jt1.jetton_master as swap_src_token, 
                jt1.amount as swap_src_amount, jt1.query_id as swap_src_query_id, jt1.created_lt as swap_src_lt,
@@ -85,13 +85,16 @@ def rebuild_top_jettons_datamart():
                  else jt1.sub_op = pool.sub_op end
              and pool.type = 'in'
             )
-            select platform, swap_time, 
+            select msg_id, originated_msg_id, platform, swap_time, 
             swap_src_owner,  swap_src_token, swap_src_amount, 
             swap_dst_owner,  swap_dst_token, swap_dst_amount
             from swaps 
             """,
             """
-            refresh materialized view mview_dex_swaps;                    
+            create unique index if not exists mview_dex_swaps_msg_id_idx on mview_dex_swaps(msg_id);            
+            """,
+            """
+            refresh materialized view concurrently mview_dex_swaps;                    
             """
         ]
     )
@@ -150,7 +153,10 @@ def rebuild_top_jettons_datamart():
             group by 1, 2    
             """,
             """
-            refresh materialized view mview_jetton_balances;                    
+            create unique index if not exists mview_jetton_balances_id_idx on mview_jetton_balances(wallet_address);
+            """,
+            """
+            refresh materialized view concurrently mview_jetton_balances;
             """
         ]
     )
