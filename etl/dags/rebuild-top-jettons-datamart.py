@@ -36,11 +36,60 @@ def rebuild_top_jettons_datamart():
         ]
     )
 
-    ## TODO add mat view code here
+
     refresh_dex_swaps = PostgresOperator(
         task_id="refresh_dex_swaps",
         postgres_conn_id="ton_db",
         sql=[
+            """
+            create table if not exists dex_pools_info (
+              id bigserial primary key,
+              platform varchar,
+              address varchar,
+              type varchar,
+              sub_op bigint
+            );
+            """,
+            """
+            create index if not exists dex_pools_info_idx1 on dex_pools_info(type, address);
+            """,
+            """
+            create unique index if not exists dex_pools_info_idx2 on dex_pools_info(platform, type, address);
+            """,
+            """
+            create materialized view if not exists mview_dex_swaps
+            as
+            with transfers as (
+              select m.created_lt, jw.jetton_master, to_timestamp(tx.utime) as swap_time, jt.*  from jetton_transfers jt 
+              join jetton_wallets jw on jw.address =jt.source_wallet 
+              join messages m on m.msg_id  = jt.msg_id  
+              join transactions tx on tx.tx_id  = m.in_tx_id 
+              where -- to_timestamp(tx.utime) > now() - interval '1 day' and 
+              jt.successful  = true
+            ),
+            swaps as (
+             select pool.platform, jt1.originated_msg_id,
+               jt1.swap_time,
+               jt1.source_owner as swap_src_owner, jt1.jetton_master as swap_src_token, 
+               jt1.amount as swap_src_amount, jt1.query_id as swap_src_query_id, jt1.created_lt as swap_src_lt,
+               
+               jt2.destination_owner as swap_dst_owner, jt2.jetton_master as swap_dst_token, 
+               jt2.amount as swap_dst_amount, jt2.query_id as swap_dst_query_id, jt2.created_lt as swap_dst_lt
+              
+             from transfers jt1 
+             join transfers jt2 on jt1.originated_msg_id = jt2.originated_msg_id  and jt1.msg_id != jt2.msg_id and 
+               jt1.query_id = jt2.query_id and jt1.source_owner = jt2.destination_owner and jt1.jetton_master != jt2.jetton_master 
+             join dex_pools_info pool on pool.address = jt1.destination_owner and 
+             case 
+                 when pool.sub_op is null then true 
+                 else jt1.sub_op = pool.sub_op end
+             and pool.type = 'in'
+            )
+            select swap_time, 
+            swap_src_owner,  swap_src_token, swap_src_amount, 
+            swap_dst_owner,  swap_dst_token, swap_dst_amount
+            from swaps 
+            """,
             """
             refresh materialized view mview_dex_swaps;                    
             """
@@ -123,13 +172,13 @@ def rebuild_top_jettons_datamart():
           where swap_time  > now() - interval '1 day'
         ), trades_in_ton as ( -- only DeDust swaps for now
         select
-          originated_msg_id, swap_time, swap_src_owner as swap_owner, swap_src_token as token,
+          swap_time, swap_src_owner as swap_owner, swap_src_token as token,
           swap_src_amount as amount_token, swap_dst_amount as amount_ton,
           'sell' as direction
           from enriched where dst = 'JTON'
         union all
         select
-          originated_msg_id, swap_time, swap_src_owner as swap_owner, swap_dst_token as token,
+          swap_time, swap_src_owner as swap_owner, swap_dst_token as token,
           swap_dst_amount as amount_token, swap_src_amount as amount_ton,
           'buy' as direction
           from enriched where src = 'JTON'

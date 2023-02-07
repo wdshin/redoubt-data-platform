@@ -65,7 +65,7 @@ async def jettons():
         ), prev as (
           select dm.*
                 from top_jettons_datamart dm
-                where build_time  = (select max(build_time) from top_jettons_datamart where build_time < now() - interval '8 hour')
+                where build_time  = (select max(build_time) from top_jettons_datamart where build_time < now() - interval '24 hour')
         )
         select address, latest.symbol as name, latest.price, prev.price as prev_price,
         latest.market_volume_ton, prev.market_volume_ton as market_volume_ton_prev, 
