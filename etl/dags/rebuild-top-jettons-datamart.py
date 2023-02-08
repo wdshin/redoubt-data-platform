@@ -230,8 +230,8 @@ def rebuild_top_jettons_datamart():
 	          else jm_dst.symbol end
 	      as dst 
           from mview_dex_swaps swaps
-          join jetton_master jm_src on jm_src.address  = swaps.swap_src_token
-          join jetton_master jm_dst on jm_dst.address  = swaps.swap_dst_token
+          left join jetton_master jm_src on jm_src.address  = swaps.swap_src_token
+          left join jetton_master jm_dst on jm_dst.address  = swaps.swap_dst_token
           where swap_time  > now() - interval '1 day'
         ), trades_in_ton as (
         select
