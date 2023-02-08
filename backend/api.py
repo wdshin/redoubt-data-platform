@@ -27,7 +27,7 @@ class ValueWithTrend:
     def create(cls, latest, prev):
         percent = None
         if prev is not None and prev > 0:
-            percent = round(100 * (latest - prev) / prev)
+            percent = round(100.0 * (latest - prev) / prev)
         return ValueWithTrend(value=latest, percent=percent)
 
 @dataclass
