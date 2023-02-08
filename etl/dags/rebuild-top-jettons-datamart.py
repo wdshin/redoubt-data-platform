@@ -245,9 +245,15 @@ def rebuild_top_jettons_datamart():
           swap_dst_amount as amount_token, swap_src_amount as amount_ton,
           'buy' as direction
           from enriched where src = 'TON'
-        ), market_volume as  (
-          select token, round(sum(amount_ton) / 1000000000) as market_volume_ton from trades_in_ton
+        ), market_volume_dex as  (
+          select token, round(sum(amount_ton) / 1000000000) as market_volume_ton_dex from trades_in_ton
           group by 1
+        ), ton_rocket_latest as (
+          select address as token, price, market_volume_ton_24
+          from ton_rocket_stat where check_time = (select max(check_time) from ton_rocket_stat)
+        ), market_volume as (
+          select token, market_volume_ton_dex + coalesce(market_volume_ton_24, 0) as market_volume_ton
+          from market_volume_dex left join ton_rocket_latest using(token)
         ), market_volume_rank as (
           select *, rank() over(order by market_volume_ton desc) as market_volume_rank from market_volume
         ), last_trades_ranks as (
