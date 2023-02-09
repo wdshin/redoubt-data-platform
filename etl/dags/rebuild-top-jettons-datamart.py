@@ -274,7 +274,7 @@ def rebuild_top_jettons_datamart():
           select mv.*, jm.symbol, case
             when coalesce(jm.decimals, 9) = 9 then price_raw
             when jm.decimals < 9 then price_raw / (pow(10, 9 - jm.decimals))
-            else price_raw * (pow(10, 9 - jm.decimals))
+            else price_raw * (pow(10, jm.decimals -9))
           end as price, jm.decimals  from market_volume_rank as mv
           join jetton_master jm on jm.address  = mv.token 
           join prices on prices.token = mv.token
