@@ -5,6 +5,8 @@
 ETL based on Airflow. Jobs list:
 
 * [rebuild-top-jettons-datamart](etl/dags/rebuild-top-jettons-datamart.py) - creates datamart with top jettons by market volume
+* [TON Rocket indexer](etl/dags/ton_rocket_exchange.py) - index last 24h stats from TON Rocket swaps
+* [MEXC indexer](etl/dags/mexc_exchange.py) - index last 24h stats from MEXC (FNZ trades)
 
 ## Backend
 

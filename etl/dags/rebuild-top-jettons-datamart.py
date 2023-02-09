@@ -251,9 +251,16 @@ def rebuild_top_jettons_datamart():
         ), ton_rocket_latest as (
           select address as token, price, market_volume_ton_24
           from ton_rocket_stat where check_time = (select max(check_time) from ton_rocket_stat)
+        ), mexc_latest as (
+          select address as token, price, market_volume_ton_24
+          from mexc_stat where check_time = (select max(check_time) from mexc_stat)
         ), market_volume as (
-          select token, market_volume_ton_dex + coalesce(market_volume_ton_24, 0) as market_volume_ton
-          from market_volume_dex left join ton_rocket_latest using(token)
+          select token, market_volume_ton_dex 
+          + coalesce(ton_rocket_latest.market_volume_ton_24, 0) + coalesce(mexc_latest.market_volume_ton_24, 0)
+          as market_volume_ton
+          from market_volume_dex
+          left join ton_rocket_latest using(token)
+          left join mexc_latest using(token)
         ), market_volume_rank as (
           select *, rank() over(order by market_volume_ton desc) as market_volume_rank from market_volume
         ), last_trades_ranks as (
