@@ -3,6 +3,8 @@ import os
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import Response
+from fastapi.middleware.cors import CORSMiddleware
+import magic
 import aiohttp
 import psycopg2
 import psycopg2.extras
@@ -14,7 +16,16 @@ import os
 import decimal
 
 app = FastAPI()
-conn = psycopg2.connect()
+origins = [
+    "http://localhost:3006",
+    "http://beta.redoubt.online"
+]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 CACHE_PREFIX = os.environ.get("API_CACHE_DIR", "/tmp/")
 
 IPFS_GATEWAY = 'https://w3s.link/ipfs/'
@@ -56,6 +67,7 @@ class TokenInfo:
 
 @app.get("/v1/jettons/top")
 async def jettons():
+    conn = psycopg2.connect()
     cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
         cursor.execute("""
@@ -78,9 +90,12 @@ async def jettons():
         left join jetton_master jm using(address)
         order by latest.market_volume_rank asc limit 10
         """)
-        return list(map(TokenInfo.from_db_row, cursor.fetchall()))
+        return {
+            'jettons': list(map(TokenInfo.from_db_row, cursor.fetchall()))
+        }
     finally:
         cursor.close()
+        conn.close
 
 async def fetch_url(url):
     parsed_url = urlparse(url)
@@ -104,18 +119,25 @@ def add_to_cache(address, content):
 
 def from_cache(address):
     key = cache_key(address)
+    print(key)
     try:
         with open(key, "rb") as src:
             return src.read()
     except FileNotFoundError:
         return None
 
+def with_content_type(content):
+    mime = magic.from_buffer(content, mime=True)
+    print(mime)
+    return Response(content=content, media_type=mime)
+
 @app.get("/v1/jettons/image/{address}", response_class=Response)
 async def image(address):
     cached = from_cache(address)
     if cached:
-        return Response(content=cached, media_type="image/png")
+        return with_content_type(cached)
     try:
+        conn = psycopg2.connect()
         cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cursor.execute("select image, image_data from jetton_master where address  =  %s", (address,))
         res = cursor.fetchone()
@@ -124,12 +146,12 @@ async def image(address):
         if res['image_data']:
             content = codecs.decode(codecs.encode(res['image_data'], "utf-8"), "base64")
             add_to_cache(address, content)
-            return Response(content=content,
-                            media_type="image/png")
+            return with_content_type(content)
         if res['image']:
             content = await fetch_url(res['image'])
             add_to_cache(address, content)
-            return Response(content=content, media_type="image/png")
+            return with_content_type(content)
         raise HTTPException(status_code=404, detail="No image provided for address")
     finally:
         cursor.close()
+        conn.close()
