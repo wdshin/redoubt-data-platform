@@ -129,7 +129,9 @@ def from_cache(address):
 def with_content_type(content):
     mime = magic.from_buffer(content, mime=True)
     print(mime)
-    return Response(content=content, media_type=mime)
+    return Response(content=content, media_type=mime, headers={
+        'Cache-Control': 'public, max-age=86400'
+    })
 
 @app.get("/v1/jettons/image/{address}", response_class=Response)
 async def image(address):
