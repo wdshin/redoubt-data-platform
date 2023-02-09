@@ -32,6 +32,17 @@ def rebuild_top_jettons_datamart():
             """
         CREATE INDEX IF NOT EXISTS top_jettons_datamart_build_idx
         ON top_jettons_datamart (build_time DESC, market_volume_rank ASC);            
+            """,
+            """
+        CREATE TABLE IF NOT EXISTS platform_volume_24_datamart (
+            id bigserial NOT NULL primary key,
+            build_time timestamp with time zone NOT NULL, 
+            platform varchar,
+            market_volume_ton decimal(40, 0)                              
+                    );""",
+            """
+        CREATE INDEX IF NOT EXISTS platform_volume_24_datamart_idx
+        ON platform_volume_24_datamart (build_time DESC, market_volume_ton DESC);            
             """
         ]
     )
@@ -318,6 +329,69 @@ def rebuild_top_jettons_datamart():
         join total_holders th using(token)
         join active_owners ao using(token)
             """
+        ]
+    )
+
+    add_platforms_stat = PostgresOperator(
+        task_id="add_platforms_stat",
+        postgres_conn_id="ton_db",
+        sql=[
+            """
+        insert into platform_volume_24_datamart(build_time, platform, market_volume_ton  )
+ 
+        with enriched as ( -- add jetton symbol
+          select swaps.*, 
+          case 
+	          when swap_src_token = 'EQBPAVa6fjMigxsnHF33UQ3auufVrg2Z8lBZTY9R-isfjIFr' then 'TON' -- JTON
+	          when swap_src_token = 'EQDQoc5M3Bh8eWFephi9bClhevelbZZvWhkqdo80XuY_0qXv' then 'TON' -- WTON
+	          when swap_src_token = 'EQCM3B12QK1e4yZSf8GtBRT0aLMNyEsBc_DhVfRRtOEffLez' then 'TON' -- pTON
+	          when swap_src_token = 'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c' then 'TON' -- native TON
+	          when swap_src_token = 'EQCajaUU1XXSAjTD-xOV7pE49fGtg4q8kF3ELCOJtGvQFQ2C' then 'TON' -- WTON from megaton
+	          else jm_src.symbol end
+	      as src,
+          case 
+   	          when swap_dst_token = 'EQBPAVa6fjMigxsnHF33UQ3auufVrg2Z8lBZTY9R-isfjIFr' then 'TON' -- JTON
+	          when swap_dst_token = 'EQDQoc5M3Bh8eWFephi9bClhevelbZZvWhkqdo80XuY_0qXv' then 'TON' -- WTON
+	          when swap_dst_token = 'EQCM3B12QK1e4yZSf8GtBRT0aLMNyEsBc_DhVfRRtOEffLez' then 'TON' -- pTON
+	          when swap_dst_token = 'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c' then 'TON' -- native TON
+	          when swap_dst_token = 'EQCajaUU1XXSAjTD-xOV7pE49fGtg4q8kF3ELCOJtGvQFQ2C' then 'TON' -- WTON from megaton
+	          else jm_dst.symbol end
+	      as dst 
+          from mview_dex_swaps swaps
+          left join jetton_master jm_src on jm_src.address  = swaps.swap_src_token
+          left join jetton_master jm_dst on jm_dst.address  = swaps.swap_dst_token
+          where swap_time  > now() - interval '1 day'
+        ), trades_in_ton as (
+        select
+          platform, swap_time, swap_src_owner as swap_owner, swap_src_token as token,
+          swap_src_amount as amount_token, swap_dst_amount as amount_ton,
+          'sell' as direction
+          from enriched where dst = 'TON'
+        union all
+        select
+          platform, swap_time, swap_src_owner as swap_owner, swap_dst_token as token,
+          swap_dst_amount as amount_token, swap_src_amount as amount_ton,
+          'buy' as direction
+          from enriched where src = 'TON'
+        ), market_volume_dex as  (
+          select platform , round(sum(amount_ton) / 1000000000) as market_volume_ton_dex from trades_in_ton
+          group by 1
+        ), ton_rocket_latest as (
+          select address as token, price, market_volume_ton_24
+          from ton_rocket_stat where check_time = (select max(check_time) from ton_rocket_stat)
+        ), mexc_latest as (
+		  select address as token, price, market_volume_ton_24
+          from mexc_stat where check_time = (select max(check_time) from mexc_stat)
+        ), market_volume as (
+          select platform , market_volume_ton_dex as market_volume_ton
+          from market_volume_dex
+          union all
+          select 'tonrocket' as platform, round(sum(market_volume_ton_24)) as market_volume_ton from ton_rocket_latest
+          union all
+          select 'mexc' as platform, round(sum(market_volume_ton_24)) as market_volume_ton from mexc_latest
+        )
+        select now() as build_time, platform, market_volume_ton from market_volume
+        """
         ]
     )
 
