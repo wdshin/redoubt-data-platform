@@ -64,6 +64,19 @@ class TokenInfo:
             sinceCreationSeconds=item['since_creation']
         )
 
+@dataclass
+class PlatformInfo:
+    name: str
+    marketVolume: int
+
+
+    @classmethod
+    def from_db_row(cls, item):
+        return PlatformInfo(
+            name=item['platform'],
+            marketVolume=item['market_volume_ton'])
+
+
 
 @app.get("/v1/jettons/top")
 async def jettons():
@@ -90,8 +103,20 @@ async def jettons():
         left join jetton_master jm using(address)
         order by latest.market_volume_rank asc limit 10
         """)
+        jettons = list(map(TokenInfo.from_db_row, cursor.fetchall()))
+
+        cursor.execute("""
+        select dm.*
+                from platform_volume_24_datamart dm
+                where build_time  = (select max(build_time) from platform_volume_24_datamart)
+        """)
+        platforms = list(map(PlatformInfo.from_db_row, cursor.fetchall()))
+
+        cursor
         return {
-            'jettons': list(map(TokenInfo.from_db_row, cursor.fetchall()))
+            'jettons': jettons,
+            'platforms': platforms,
+            'total': sum(map(lambda x: x.marketVolume, platforms))
         }
     finally:
         cursor.close()
