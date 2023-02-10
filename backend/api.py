@@ -18,6 +18,7 @@ import decimal
 app = FastAPI()
 origins = [
     "http://localhost:3006",
+    "http://localhost:3000",
     "http://beta.redoubt.online"
 ]
 app.add_middleware(
