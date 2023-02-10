@@ -65,7 +65,7 @@ def rebuild_top_jettons_datamart():
             create index if not exists dex_pools_info_idx1 on dex_pools_info(type, address);
             """,
             """
-            create unique index if not exists dex_pools_info_idx2 on dex_pools_info(platform, type, address);
+            create unique index if not exists dex_pools_info_idx2 on dex_pools_info(platform, type, address, sub_op);
             """,
             """
             create or replace view view_tonswap_swaps
