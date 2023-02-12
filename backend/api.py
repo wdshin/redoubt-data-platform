@@ -51,7 +51,7 @@ class TokenInfo:
     marketVolume: ValueWithTrend
     totalHolders: ValueWithTrend
     activeOwners24h: ValueWithTrend
-    sinceCreationSeconds: int
+    # sinceCreationSeconds: int
 
     @classmethod
     def from_db_row(cls, item):
@@ -61,8 +61,8 @@ class TokenInfo:
             price=ValueWithTrend.create(item['price'], item['prev_price']),
             marketVolume=ValueWithTrend.create(item['market_volume_ton'], item['market_volume_ton_prev']),
             totalHolders=ValueWithTrend.create(item['total_holders'], item['total_holders_prev']),
-            activeOwners24h=ValueWithTrend.create(item['active_owners_24'], item['active_owners_24_prev']),
-            sinceCreationSeconds=item['since_creation']
+            activeOwners24h=ValueWithTrend.create(item['active_owners_24'], item['active_owners_24_prev'])
+            # sinceCreationSeconds=item['since_creation']
         )
 
 @dataclass
@@ -102,7 +102,8 @@ async def jettons():
         from latest
         left join prev using(address)
         left join jetton_master jm using(address)
-        order by latest.market_volume_rank asc limit 10
+        where latest.market_volume_ton > 300 or latest.market_volume_rank  < 10
+        order by latest.market_volume_rank asc -- limit 10
         """)
         jettons = list(map(TokenInfo.from_db_row, cursor.fetchall()))
 
