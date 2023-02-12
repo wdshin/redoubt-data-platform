@@ -20,6 +20,7 @@ origins = [
     "http://localhost:3006",
     "http://localhost:3000",
     "http://beta.redoubt.online",
+    "https://redoubt.online",
     "https://app.redoubt.online"
 ]
 app.add_middleware(
