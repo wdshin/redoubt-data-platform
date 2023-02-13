@@ -21,7 +21,8 @@ origins = [
     "http://localhost:3000",
     "http://beta.redoubt.online",
     "http://redoubt.online",
-    "http://www.redoubt.online",
+    "https://redoubt.online",
+    "https://www.redoubt.online",
     "https://app.redoubt.online"
 ]
 app.add_middleware(
