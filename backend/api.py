@@ -23,7 +23,8 @@ origins = [
     "http://redoubt.online",
     "https://redoubt.online",
     "https://www.redoubt.online",
-    "https://app.redoubt.online"
+    "https://app.redoubt.online",
+    "http://beta-app.redoubt.online"
 ]
 app.add_middleware(
     CORSMiddleware,
