@@ -265,13 +265,18 @@ def rebuild_top_jettons_datamart():
         ), mexc_latest as (
           select address as token, price, market_volume_ton_24
           from mexc_stat where check_time = (select max(check_time) from mexc_stat)
+        ), gateio_latest as (
+          select address as token, price, market_volume_ton_24
+          from gateio_stat where check_time = (select max(check_time) from gateio_stat)
         ), market_volume as (
           select token, market_volume_ton_dex 
           + coalesce(ton_rocket_latest.market_volume_ton_24, 0) + coalesce(mexc_latest.market_volume_ton_24, 0)
+          + coalesce(gateio_latest.market_volume_ton_24, 0)
           as market_volume_ton
           from market_volume_dex
           left join ton_rocket_latest using(token)
           left join mexc_latest using(token)
+          left join gateio_latest using(token)
         ), market_volume_rank as (
           select *, rank() over(order by market_volume_ton desc) as market_volume_rank from market_volume
         ), last_trades_ranks as (
@@ -382,6 +387,9 @@ def rebuild_top_jettons_datamart():
         ), mexc_latest as (
 		  select address as token, price, market_volume_ton_24
           from mexc_stat where check_time = (select max(check_time) from mexc_stat)
+        ), gateio_latest as (
+          select address as token, price, market_volume_ton_24
+          from gateio_stat where check_time = (select max(check_time) from gateio_stat)
         ), market_volume as (
           select platform , market_volume_ton_dex as market_volume_ton
           from market_volume_dex
@@ -389,13 +397,15 @@ def rebuild_top_jettons_datamart():
           select 'tonrocket' as platform, round(sum(market_volume_ton_24)) as market_volume_ton from ton_rocket_latest
           union all
           select 'mexc' as platform, round(sum(market_volume_ton_24)) as market_volume_ton from mexc_latest
+          union all
+          select 'gateio' as platform, round(sum(market_volume_ton_24)) as market_volume_ton from gateio_latest
         )
         select now() as build_time, platform, market_volume_ton from market_volume
         """
         ]
     )
 
-    create_tables >>  refresh_dex_swaps >> refresh_current_balances >> add_current_top_jettons
+    create_tables >>  refresh_dex_swaps >> refresh_current_balances >> add_current_top_jettons >> add_platforms_stat
 
 
 
