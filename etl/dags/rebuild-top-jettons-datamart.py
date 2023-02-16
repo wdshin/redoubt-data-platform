@@ -138,7 +138,7 @@ def rebuild_top_jettons_datamart():
                  when pool_out.sub_op is null then true
                  else jt1.sub_op = pool_out.sub_op end
              and pool_out.type = 'out' and pool_in.platform = pool_out.platform
-            )
+            ), datamart as (
             select msg_id, originated_msg_id, platform, swap_time, 
             swap_src_owner,  swap_src_token, swap_src_amount, 
             swap_dst_owner,  swap_dst_token, swap_dst_amount
@@ -147,6 +147,8 @@ def rebuild_top_jettons_datamart():
             select * from view_tegro_swaps -- TODO add code
             union all
             select * from view_tonswap_swaps
+            ) 
+            select distinct * from datamart
             """,
             """
             create unique index if not exists mview_dex_swaps_msg_id_idx on mview_dex_swaps(msg_id);            
