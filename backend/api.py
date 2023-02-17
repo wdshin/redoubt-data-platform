@@ -136,7 +136,7 @@ async def fetch_url(url):
         url = IPFS_GATEWAY + parsed_url.netloc
     print(f"fetching {url}")
 
-    async with aiohttp.ClientSession() as client:
+    async with aiohttp.ClientSession(headers={'User-Agent': 'Re:doubt API indexer'}) as client:
         async with client.get(url) as resp:
             assert resp.status == 200
             return await resp.read()
