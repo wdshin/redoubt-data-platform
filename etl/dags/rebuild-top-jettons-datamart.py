@@ -68,14 +68,14 @@ def rebuild_top_jettons_datamart():
             create unique index if not exists dex_pools_info_idx2 on dex_pools_info(platform, type, address, sub_op);
             """,
             """
-            create or replace view view_tonswap_swaps
+            create or replace view view_swaps_direct -- for DEXs like Tegro and Tonswap
             as
             with transfers_token2ton as (
               select pool.platform, jw.jetton_master, to_timestamp(jt.utime) as swap_time, jt.*  from jetton_transfers jt 
               join jetton_wallets jw on jw.address =jt.source_wallet  
               join dex_pools_info pool on pool.sub_op = jt.sub_op and pool."type" = 'token2ton' and pool.address = jt.destination_owner
               where jt.successful  = true
-            ), tonswap_token2ton as (
+            ), swap_token2ton as (
                 select jt.created_lt, m1.created_lt, m2.created_lt, m3.created_lt, m4.created_lt, m4.value, jt.*  from transfers_token2ton jt
                 join messages m1 on m1.msg_id  = jt.msg_id 
                 join transactions t1 on t1.tx_id = m1.in_tx_id 
@@ -89,24 +89,24 @@ def rebuild_top_jettons_datamart():
               join jetton_wallets jw on jw.address =jt.source_wallet  
               join dex_pools_info pool on pool."type" = 'ton2token' and pool.address = jt.source_owner
               where jt.successful = true
-            ), tonswap_ton2token as (
+            ), swap_ton2token as (
                 select platform, jt.created_lt,  m1.created_lt, m2.created_lt, m2.value, m2.op, m2."source", m2.destination , jt.*  from transfers_ton2token jt
                 join messages m1 on m1.msg_id  = jt.msg_id 
                 join transactions t1 on t1.tx_id = m1.out_tx_id 
                 join messages m2 on m2.in_tx_id  = t1.tx_id and m2."source" = jt.destination_owner 
                 join dex_pools_info pool on pool.sub_op  = m2.op  and pool.address  = m2.destination 
-            ), swaps_tonswap as (
+            ), swaps as (
                 select msg_id, originated_msg_id, platform, swap_time, 
                   destination_owner  as swap_src_owner, 'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c' as swap_src_token, value - 140000000 as swap_src_amount, -- TODO use amount from the message
                   destination_owner as swap_dst_owner, jetton_master as swap_dst_token,  amount as swap_dst_amount
-                from tonswap_ton2token
+                from swap_ton2token
               union all
                 select msg_id, originated_msg_id, platform, swap_time, 
                   source_owner as swap_src_owner, jetton_master as swap_src_token, amount as swap_src_amount,
                   source_owner as swap_dst_owner, 'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c' as swap_dst_token, value  as swap_dst_amount -- exact amount ?
-                from tonswap_token2ton
+                from swap_token2ton
             )
-            select * from swaps_tonswap
+            select * from swaps
             """,
             """
             create materialized view if not exists mview_dex_swaps
@@ -144,9 +144,7 @@ def rebuild_top_jettons_datamart():
             swap_dst_owner,  swap_dst_token, swap_dst_amount
             from swaps
             union all
-            select * from view_tegro_swaps -- TODO add code
-            union all
-            select * from view_tonswap_swaps
+            select * from view_swaps_direct
             ) 
             select distinct * from datamart
             """,
