@@ -20,5 +20,5 @@ docker compose up -d
 ```
                      
 Methods:
-* ``GET /v1/jettons/top`` returns datamart with top Jettons
+* ``GET /v1/jettons/top`` returns datamart with top Jettons and volume by platform
 * ``GET /v1/jettons/image/{address}`` fetches jetton image and returns as image content
