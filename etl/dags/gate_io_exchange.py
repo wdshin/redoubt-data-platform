@@ -47,7 +47,7 @@ def gateio_fetcher():
         fnz_ton_price = float(fnz['last']) / float(usdt['last'])
         insert_sql = f"""INSERT INTO gateio_stat(address, check_time, symbol,
         price, market_volume_ton_24 )
-         VALUES ('EQDCJL0iQHofcBBvFBHdVG233Ri2V4kCNFgfRT-gqAd3Oc86', now(), 'FUNZ', 
+         VALUES ('EQDCJL0iQHofcBBvFBHdVG233Ri2V4kCNFgfRT-gqAd3Oc86', now(), 'FNZ', 
          {fnz_ton_price}, {fnz_ton_volume});
         """
         postgres_hook.run(insert_sql, autocommit=True)
