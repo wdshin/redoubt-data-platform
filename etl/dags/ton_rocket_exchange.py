@@ -86,7 +86,7 @@ PAIRS = {
     "IVS-TONCOIN": {
         "address": "EQAdSQFNyPCbT14QKPBZzpQkf4MC5AvYsiNYZolymzrckMBs",
         "token_position": 0,
-        "token": "SCALE",
+        "token": "IVS",
         "decimals": 9
     },
     "LAVE-TONCOIN": {
