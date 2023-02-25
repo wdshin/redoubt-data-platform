@@ -100,6 +100,12 @@ PAIRS = {
         "token_position": 0,
         "token": "VIRUS",
         "decimals": 9
+    },
+    "DHD-TONCOIN": {
+        "address": "EQBCFwW8uFUh-amdRmNY9NyeDEaeDYXd9ggJGsicpqVcHq7B",
+        "token_position": 0,
+        "token": "DHD",
+        "decimals": 9
     }
 }
 
