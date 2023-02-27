@@ -190,8 +190,11 @@ def tvl_datamart():
             ), stonfi_ranks as (
               select *, rank() over(partition by address order by last_update_time desc) as check_rank from stonfi_dex_pools_balances sdpb 
             ), get_methods as (
-              select distinct 'stonfi' as platform, 'get' as type, address, jetton_a, jetton_b, balance_a, balance_b 
-              from stonfi_ranks where balance_a > 0 and balance_b > 0 and check_rank = 1
+              select distinct 'stonfi' as platform, 'get' as type, stonfi_ranks.address, jw_a.jetton_master as jetton_a, jw_b.jetton_master as jetton_b, balance_a, balance_b 
+              from stonfi_ranks
+              join jetton_wallets jw_a on jw_a.address  = stonfi_ranks.jetton_a
+              join jetton_wallets jw_b on jw_b.address  = stonfi_ranks.jetton_b
+              where balance_a > 0 and balance_b > 0 and check_rank = 1
             )
             select * from get_methods
             union all
