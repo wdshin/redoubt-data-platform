@@ -185,8 +185,17 @@ def tvl_datamart():
               left join mview_jetton_balances mjb_b on mjb_b.wallet_address = jw_b.address
               left join current_balances_ton cbt on cbt.address = pools.address
               where jetton_a is not null and jetton_b is not null
+            ), recovered as (
+              select distinct * from pools_with_balances where balance_a > 0 and balance_b > 0
+            ), stonfi_ranks as (
+              select *, rank() over(partition by address order by last_update_time desc) as check_rank from stonfi_dex_pools_balances sdpb 
+            ), get_methods as (
+              select distinct 'stonfi' as platform, 'get' as type, address, jetton_a, jetton_b, balance_a, balance_b 
+              from stonfi_ranks where balance_a > 0 and balance_b > 0 and check_rank = 1
             )
-            select distinct * from pools_with_balances where balance_a > 0 and balance_b > 0
+            select * from get_methods
+            union all
+            select * from recovered
             """,
             """
             create unique index if not exists mview_dex_pools_balances_address on mview_dex_pools_balances(address);            
