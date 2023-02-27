@@ -284,18 +284,31 @@ def tvl_datamart():
             """
             create or replace view view_dex_tvl_current
             as
-            with prices_v1 as (
+            with swaps_stat_raw as (
+              select mds.swap_src_token as jetton_a, mds.swap_dst_token as jetton_b, originated_msg_id as id from mview_dex_swaps mds
+              where  mds.swap_time  > now() - interval '30 days'
+              union all
+              select mds.swap_dst_token as jetton_a, mds.swap_src_token as jetton_b, originated_msg_id as id from mview_dex_swaps mds
+              where  mds.swap_time  > now() - interval '30 days' 
+            ), swaps_stat_stat as (
+              select jetton_a, jetton_b, count(distinct id) as swaps_cnt from swaps_stat_raw group by 1, 2
+            ),
+            prices_v1 as (
               select jetton_a as address, (sum(balance_b) / sum(balance_a)) as price
               from mview_dex_pools_balances
-              where jetton_b = 'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c' 
+              join swaps_stat_stat stat using(jetton_a, jetton_b)
+              where stat.swaps_cnt > 100 and (jetton_b = 'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c' 
                     or jetton_b = 'EQBPAVa6fjMigxsnHF33UQ3auufVrg2Z8lBZTY9R-isfjIFr' -- JTON
                     or jetton_b = 'EQDQoc5M3Bh8eWFephi9bClhevelbZZvWhkqdo80XuY_0qXv' -- WTON
                     or jetton_b = 'EQCM3B12QK1e4yZSf8GtBRT0aLMNyEsBc_DhVfRRtOEffLez' -- pTON
-                    or jetton_b = 'EQCajaUU1XXSAjTD-xOV7pE49fGtg4q8kF3ELCOJtGvQFQ2C' -- WTON from megaton
+                    or jetton_b = 'EQCajaUU1XXSAjTD-xOV7pE49fGtg4q8kF3ELCOJtGvQFQ2C') -- WTON from megaton
               group by 1
+              having sum(balance_b) > 100000000000
             ), prices_v2 as (
-              select jetton_a as address, avg(balance_b / balance_a * prices_v1.price) as price
-              from mview_dex_pools_balances b join prices_v1 on b.jetton_b = prices_v1.address
+              select b.jetton_a as address, avg(balance_b / balance_a * prices_v1.price) as price
+              from mview_dex_pools_balances b 
+              join swaps_stat_stat stat on stat.jetton_a = b.jetton_a and stat.jetton_b = b.jetton_b and stat.swaps_cnt > 100
+              join prices_v1 on b.jetton_b = prices_v1.address 
               group by 1
             ), prices_all as (
               select address, coalesce(prices_v1.price, prices_v2.price) as price from prices_v1
@@ -321,7 +334,7 @@ def tvl_datamart():
                 when p1.price is not null and p2.price is null
                   then balance_a * p1.price * 2
                 when p2.price is not null and p1.price is null
-                  then balance_a * p2.price * 2
+                  then balance_b * p2.price * 2
                 else null
               end as tvl_ton, 
               p1.price, p2.price,
@@ -334,10 +347,11 @@ def tvl_datamart():
              union all
              select 'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c' as address, 'TON' as symbol
             )
+            
             select datamart.address, platform, jetton_a, jetton_b,
             round(tvl_ton / 1000000000) as tvl_ton
             from datamart
-            where tvl_ton is not null            
+            where tvl_ton is not null          
             """,
             """
             insert into tvl_history_datamart(build_time, platform, address, jetton_a, jetton_b, tvl_ton)
