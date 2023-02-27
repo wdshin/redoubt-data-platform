@@ -54,6 +54,20 @@ def tvl_datamart():
             """,
             """
         create unique index if not exists stonfi_dex_pools_balances_addr_time on stonfi_dex_pools_balances(address, last_update_time);
+            """,
+            """
+        CREATE TABLE IF NOT EXISTS dedust_dex_pools_balances (
+            id bigserial NOT NULL primary key,
+            last_update_time timestamp with time zone NOT NULL,
+            address varchar,
+            jetton_a varchar,
+            jetton_b varchar,
+            balance_a numeric,
+            balance_b numeric
+        );
+            """,
+            """
+        create unique index if not exists dedust_dex_pools_balances_addr_time on dedust_dex_pools_balances(address, last_update_time);
             """
         ]
     )
@@ -98,9 +112,55 @@ def tvl_datamart():
             # force account to update state
             postgres_hook.run(f"update accounts set last_check_time = null where address = '{row.address}'", autocommit=True)
 
-    fetch_stonfi_lp_info = PythonOperator(
+    fetch_stonfi_lp_info_task = PythonOperator(
         task_id=f'fetch_stonfi_lp_info',
         python_callable=fetch_stonfi_lp_info
+    )
+
+    def fetch_dedust_lp_info():
+        postgres_hook = PostgresHook(postgres_conn_id="ton_db")
+        contracts_executor_url = Variable.get("contracts_executor_url")
+        sql = """
+        with pools as (
+          select distinct address from dex_pools_info dpi where platform ='dedust' and type = 'in'
+        ), states_ranks as (
+          select address, code_hash, data, check_time, rank() over(partition by address order by last_tx_lt desc) as rank from account_state as2 
+          join pools using(address)
+        )
+        select address, check_time, code.code, data from states_ranks
+        join code on code.hash = states_ranks.code_hash
+        where rank = 1
+        """
+
+        for _, row in postgres_hook.get_pandas_df(sql).iterrows():
+            logging.info(f"Fetching info for {row.address}")
+            token0_address, token1_address, _ = requests.post(contracts_executor_url, json={
+                                                                                     'code': row.code,
+                                                                                     'data': row.data,
+                                                                                     'method': 'get_token_roots',
+                                                                                     'expected': ['address', 'address', 'address'],
+                                                                                     'address': row.address
+                                                                                 }).json()['result']
+            _, reserve0, reserve1 = requests.post(contracts_executor_url, json={
+                                                                                    'code': row.code,
+                                                                                    'data': row.data,
+                                                                                    'method': 'get_balances',
+                                                                                    'expected': ['int', 'int', 'int'],
+                                                                                    'address': row.address
+                                                                                }).json()['result']
+            insert_sql = f"""
+            insert into dedust_dex_pools_balances(address, last_update_time, jetton_a, jetton_b, balance_a, balance_b)
+            values ('{row.address}', to_timestamp({row.check_time}), '{token0_address}', '{token1_address}', 
+            {reserve0}, {reserve1})
+            on conflict do nothing
+            """
+            postgres_hook.run(insert_sql, autocommit=True)
+            # force account to update state
+            postgres_hook.run(f"update accounts set last_check_time = null where address = '{row.address}'", autocommit=True)
+
+    fetch_dedust_lp_info_task = PythonOperator(
+        task_id=f'fetch_dedust_lp_info',
+        python_callable=fetch_dedust_lp_info
     )
 
 
@@ -185,20 +245,28 @@ def tvl_datamart():
               left join mview_jetton_balances mjb_b on mjb_b.wallet_address = jw_b.address
               left join current_balances_ton cbt on cbt.address = pools.address
               where jetton_a is not null and jetton_b is not null
-            ), recovered as (
+            ), chain_recovered as (
               select distinct * from pools_with_balances where balance_a > 0 and balance_b > 0
             ), stonfi_ranks as (
               select *, rank() over(partition by address order by last_update_time desc) as check_rank from stonfi_dex_pools_balances sdpb 
-            ), get_methods as (
+            ), stonfi_tvl as (
               select distinct 'stonfi' as platform, 'get' as type, stonfi_ranks.address, jw_a.jetton_master as jetton_a, jw_b.jetton_master as jetton_b, balance_a, balance_b 
               from stonfi_ranks
               join jetton_wallets jw_a on jw_a.address  = stonfi_ranks.jetton_a
               join jetton_wallets jw_b on jw_b.address  = stonfi_ranks.jetton_b
               where balance_a > 0 and balance_b > 0 and check_rank = 1
+            ), dedust_ranks as (
+              select *, rank() over(partition by address order by last_update_time desc) as check_rank from dedust_dex_pools_balances 
+            ), dedust_tvl as (
+              select distinct 'dedust' as platform, 'get' as type, address, jetton_a, jetton_b, balance_a, balance_b 
+              from dedust_ranks
+              where balance_a > 0 and balance_b > 0 and check_rank = 1
             )
-            select * from get_methods
+            select * from dedust_tvl
             union all
-            select * from recovered
+            select * from stonfi_tvl
+            union all
+            select * from chain_recovered
             """,
             """
             create unique index if not exists mview_dex_pools_balances_address on mview_dex_pools_balances(address);            
@@ -278,7 +346,7 @@ def tvl_datamart():
             ]
     )
 
-    create_tables >>  [ fetch_stonfi_lp_info ] >> refresh_mview_pools_balances >> create_history_entry
+    create_tables >>  [ fetch_stonfi_lp_info_task, fetch_dedust_lp_info_task ] >> refresh_mview_pools_balances >> create_history_entry
 
 
 
