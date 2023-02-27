@@ -67,7 +67,7 @@ def tvl_datamart():
           where admin_address = 'EQB3ncyBUTjZUA5EnFKR5_EnOMI9V1tTEAAPaiU71gc4TiUt' 
           and name like 'LP Token for%'
         ), states_ranks as (
-          select address, code_hash, data, check_time, rank() over(partition by address order by last_tx_hash desc) as rank  from account_state as2 
+          select address, code_hash, data, check_time, rank() over(partition by address order by last_tx_lt desc) as rank  from account_state as2 
           join pools using(address)
         )
         select address, check_time, code.code, data from states_ranks
