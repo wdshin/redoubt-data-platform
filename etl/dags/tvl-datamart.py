@@ -1,7 +1,12 @@
 from airflow.decorators import dag, task
 from airflow.providers.postgres.operators.postgres import PostgresOperator
+from airflow.providers.postgres.hooks.postgres import PostgresHook
+from airflow.operators.python import PythonOperator
+from airflow.models import Variable
 
 from datetime import datetime, timedelta
+import requests
+import logging
 
 @dag(
     schedule_interval="@hourly",
@@ -36,7 +41,63 @@ def tvl_datamart():
             jetton_b varchar,
             tvl_ton decimal(20, 0)                              
         );""",
+            """
+        CREATE TABLE IF NOT EXISTS stonfi_dex_pools_balances (
+            id bigserial NOT NULL primary key,
+            check_time timestamp with time zone NOT NULL,
+            address varchar,
+            jetton_a varchar,
+            jetton_b varchar,
+            balance_a numeric,
+            balance_b numeric
+        );
+            """,
+            """
+        create unique index if not exists stonfi_dex_pools_balances_addr_time on stonfi_dex_pools_balances(address, check_time);
+            """
         ]
+    )
+
+    def fetch_stonfi_lp_info():
+        postgres_hook = PostgresHook(postgres_conn_id="ton_db")
+        contracts_executor_url = Variable.get("contracts_executor_url")
+        sql = """
+        with pools as (
+          select distinct address from jetton_master 
+          where admin_address = 'EQB3ncyBUTjZUA5EnFKR5_EnOMI9V1tTEAAPaiU71gc4TiUt' 
+          and name like 'LP Token for%'
+        ), states_ranks as (
+          select address, code_hash, data, check_time, rank() over(partition by address order by last_tx_hash desc) as rank  from account_state as2 
+          join pools using(address)
+        )
+        select address, check_time, code.code, data from states_ranks
+        join code on code.hash = states_ranks.code_hash
+        where rank = 1
+        """
+        """
+        Get method get_lp_account_data, 
+        see code for details: https://github.com/ston-fi/dex-core/blob/main/contracts/pool/get.func#L2
+        """
+        for _, row in postgres_hook.get_pandas_df(sql).iterrows():
+            logging.info(f"Fetching info for {row.address}")
+            reserve0, reserve1, token0_address, token1_address, _, _, _, _, _, _ = requests.post(contracts_executor_url,
+            json={
+                'code': row.code,
+                'data': row.data,
+                'method': 'get_pool_data',
+                'expected': ['int', 'int', 'address', 'address', 'int', 'int', 'int', 'address', 'int', 'int'],
+                'address': row.address
+            }).json()['result']
+            insert_sql = f"""
+            insert into stonfi_dex_pools_balances(address, check_time, jetton_a, jetton_b, balance_a, balance_b)
+            values ('{row.address}', to_timestamp({row.check_time}), '{token0_address}', '{token1_address}', {reserve0}, {reserve1})
+            on conflict do nothing
+            """
+            postgres_hook.run(insert_sql, autocommit=True)
+
+    fetch_stonfi_lp_info = PythonOperator(
+        task_id=f'fetch_stonfi_lp_info',
+        python_callable=fetch_stonfi_lp_info
     )
 
 
@@ -202,7 +263,7 @@ def tvl_datamart():
             ]
     )
 
-    create_tables >>  refresh_mview_pools_balances >> create_history_entry
+    create_tables >>  [ fetch_stonfi_lp_info ] >> refresh_mview_pools_balances >> create_history_entry
 
 
 
