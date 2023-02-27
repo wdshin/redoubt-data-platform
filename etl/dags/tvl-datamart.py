@@ -44,7 +44,7 @@ def tvl_datamart():
             """
         CREATE TABLE IF NOT EXISTS stonfi_dex_pools_balances (
             id bigserial NOT NULL primary key,
-            check_time timestamp with time zone NOT NULL,
+            last_update_time timestamp with time zone NOT NULL,
             address varchar,
             jetton_a varchar,
             jetton_b varchar,
@@ -53,7 +53,7 @@ def tvl_datamart():
         );
             """,
             """
-        create unique index if not exists stonfi_dex_pools_balances_addr_time on stonfi_dex_pools_balances(address, check_time);
+        create unique index if not exists stonfi_dex_pools_balances_addr_time on stonfi_dex_pools_balances(address, last_update_time);
             """
         ]
     )
@@ -89,11 +89,14 @@ def tvl_datamart():
                 'address': row.address
             }).json()['result']
             insert_sql = f"""
-            insert into stonfi_dex_pools_balances(address, check_time, jetton_a, jetton_b, balance_a, balance_b)
-            values ('{row.address}', to_timestamp({row.check_time}), '{token0_address}', '{token1_address}', {reserve0}, {reserve1})
+            insert into stonfi_dex_pools_balances(address, last_update_time, jetton_a, jetton_b, balance_a, balance_b)
+            values ('{row.address}', to_timestamp({row.check_time}), '{token0_address}', '{token1_address}', 
+            {reserve0}, {reserve1})
             on conflict do nothing
             """
             postgres_hook.run(insert_sql, autocommit=True)
+            # force account to update state
+            postgres_hook.run(f"update accounts set last_check_time = null where address = '{row.address}'", autocommit=True)
 
     fetch_stonfi_lp_info = PythonOperator(
         task_id=f'fetch_stonfi_lp_info',
