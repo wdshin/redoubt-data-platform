@@ -20,6 +20,8 @@ Variables and connectins:
 (default value is http://contracts-executor:9090/execute)
 * ``ton_db`` - main DB (from ton-indexer)
 * ``telegram_watchdog_conn`` - Telegram credentials for notifications
+* ``alerts_tvl_delta_min_pool`` - min LP size for delta alerts
+* ``alerts_tvl_delta_percent`` - LP delta (percents) for alerts 
 
 ## Backend
 

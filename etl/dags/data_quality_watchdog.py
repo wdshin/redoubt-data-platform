@@ -3,6 +3,7 @@ from airflow.decorators import dag, task
 from airflow.operators.python import PythonOperator
 from airflow.providers.telegram.hooks.telegram import TelegramHook
 from airflow.providers.postgres.hooks.postgres import PostgresHook
+from airflow.models import Variable
 
 from datetime import datetime
 import logging
@@ -119,8 +120,53 @@ def data_quality_watchdog():
         python_callable=check_datamart_lag
     )
 
+    def tvl_alerts():
+        postgres_hook = PostgresHook(postgres_conn_id="ton_db")
+        alerts_tvl_delta_percent  = Variable.get("alerts_tvl_delta_percent")
+        alerts_tvl_delta_min_pool = Variable.get("alerts_tvl_delta_min_pool")
+        sql = f"""
+            with ranks as (
+              select *, dense_rank() over(order by build_time desc) as build_rank  from view_tvl_history_datamart_simple
+            ), last_one as (
+              select * from ranks where build_rank = 1
+            ), prev_one as (
+              select * from ranks where build_rank = 2
+            ), new_pools as (
+              select last_one.* from last_one 
+              left join prev_one on last_one.address = prev_one.address
+              where prev_one.address is null
+            ), missing_pools as (
+              select prev_one.* from prev_one 
+              left join last_one on last_one.address = prev_one.address
+              where last_one.address is null
+            ), delta_pools as (
+              select last_one.*, prev_one.tvl_ton as prev_tvl, last_one.tvl_ton as last_tvl, case 
+                when last_one.tvl_ton > 0 then round(100 * (last_one.tvl_ton - prev_one.tvl_ton) / last_one.tvl_ton)
+                else 0
+              end as delta from last_one 
+              join prev_one on last_one.address = prev_one.address
+              where abs(last_one.tvl_ton - prev_one.tvl_ton) > 2
+            )
+            select 'new pool' as type, platform , address, jetton_a, jetton_b, tvl_ton from new_pools
+            union all
+            select 'missing pool' as type, platform, address, jetton_a, jetton_b, tvl_ton from missing_pools
+            union all
+            select 'delta ' || delta || '%: ' || prev_tvl || ' => ' || last_tvl as type, platform, address, jetton_a, 
+            jetton_b, tvl_ton from delta_pools 
+            where abs(delta) >= {alerts_tvl_delta_percent} and (last_tvl > {alerts_tvl_delta_min_pool} or 
+            prev_tvl > {alerts_tvl_delta_min_pool})        
+        """
+        for _, row in postgres_hook.get_pandas_df(sql).iterrows():
+            send(f"❗️ {row.type}: {row.jetton_a}/{row.jetton_b} on {row.platform}, {row.tvl_ton} TON ({row.address})")
 
-    check_jetton_api_task >> check_datamart_lag_task
+
+    tvl_alerts_task = PythonOperator(
+        task_id=f'tvl_alerts',
+        python_callable=tvl_alerts
+    )
+
+
+    check_jetton_api_task >> check_datamart_lag_task >> tvl_alerts_task
 
 
 data_quality_watchdog_dag = data_quality_watchdog()
