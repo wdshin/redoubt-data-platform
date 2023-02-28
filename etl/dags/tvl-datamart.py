@@ -9,7 +9,7 @@ import requests
 import logging
 
 @dag(
-    schedule_interval="@hourly",
+    schedule_interval="0 * * * *",
     start_date=datetime(2023, 1, 1),
     catchup=False,
     concurrency=1,
@@ -181,7 +181,7 @@ def tvl_datamart():
               group by 1, 2
             ), pool2jetton_ranks as (
               select address, jetton_master, transfers_cnt, 
-              rank() over(partition by address order by transfers_cnt desc) as activity_rank
+              row_number() over(partition by address order by transfers_cnt, jetton_master desc) as activity_rank
               from pool2jetton_counts
             ),token1 as (
               select address, jetton_master from pool2jetton_ranks where activity_rank = 1
