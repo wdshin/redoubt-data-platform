@@ -363,7 +363,7 @@ def tvl_datamart():
             select vdtc.address, platform, jm_a.symbol as jetton_a, jm_b.symbol as jetton_b, tvl_ton from view_dex_tvl_current vdtc 
             left join symbols jm_a on jetton_a = jm_a.address 
             left join symbols jm_b on jetton_b = jm_b.address 
-            """
+            """,
             """
             insert into tvl_history_datamart(build_time, platform, address, jetton_a, jetton_b, tvl_ton)
             select now(), platform, address, jetton_a, jetton_b, tvl_ton from view_dex_tvl_current            
