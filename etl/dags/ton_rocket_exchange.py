@@ -107,6 +107,12 @@ PAIRS = {
         "token_position": 0,
         "token": "DHD",
         "decimals": 9
+    },
+    "KINGY-TONCOIN": {
+        "address": "EQC-tdRjjoYMz3MXKW4pj95bNZgvRyWwZ23Jix3ph7guvHxJ",
+        "token_position": 0,
+        "token": "KINGY",
+        "decimals": 9
     }
 }
 
