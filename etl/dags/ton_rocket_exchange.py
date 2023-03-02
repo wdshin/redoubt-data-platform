@@ -2,6 +2,7 @@ from airflow.decorators import dag, task
 from airflow.providers.postgres.operators.postgres import PostgresOperator
 from airflow.operators.python import PythonOperator
 from airflow.providers.postgres.hooks.postgres import PostgresHook
+from airflow.providers.telegram.hooks.telegram import TelegramHook
 
 from datetime import datetime
 from time import time
@@ -149,6 +150,8 @@ def ton_rocket_fetcher():
             pair_info = PAIRS.get(pair['name'], None)
             if pair_info is None:
                 logging.warning(f"pair not found {pair}")
+                telegram_hook = TelegramHook(telegram_conn_id="telegram_watchdog_conn")
+                telegram_hook.send_message({"text": f"New pair on TON Rocket: {pair}"})
                 continue
             ton_key = 'quoteVolume24h' if pair_info['token_position'] == 0 else 'mainVolume24h'
             volume_ton = round(pair[ton_key])
