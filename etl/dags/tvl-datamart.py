@@ -177,7 +177,6 @@ def tvl_datamart():
               select destination_owner as address, jw.jetton_master, count(1) as transfers_cnt from jetton_transfers jt
               join pools on pools.address = jt.destination_owner 
               join jetton_wallets jw on jw.address  = jt.source_wallet 
-              where to_timestamp(jt.utime) > now() - interval '30 days'
               group by 1, 2
             ), pool2jetton_ranks as (
               select address, jetton_master, transfers_cnt, 
@@ -353,6 +352,18 @@ def tvl_datamart():
             from datamart
             where tvl_ton is not null          
             """,
+            """
+            create or replace view view_dex_tvl_current_simple
+            as
+            with symbols as (
+             select address, symbol from jetton_master
+             union all
+             select 'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c' as address, 'TON' as symbol
+            )
+            select vdtc.address, platform, jm_a.symbol as jetton_a, jm_b.symbol as jetton_b, tvl_ton from view_dex_tvl_current vdtc 
+            left join symbols jm_a on jetton_a = jm_a.address 
+            left join symbols jm_b on jetton_b = jm_b.address 
+            """
             """
             insert into tvl_history_datamart(build_time, platform, address, jetton_a, jetton_b, tvl_ton)
             select now(), platform, address, jetton_a, jetton_b, tvl_ton from view_dex_tvl_current            
