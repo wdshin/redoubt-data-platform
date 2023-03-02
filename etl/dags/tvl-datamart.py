@@ -181,7 +181,7 @@ def tvl_datamart():
               group by 1, 2
             ), pool2jetton_ranks as (
               select address, jetton_master, transfers_cnt, 
-              row_number() over(partition by address order by transfers_cnt, jetton_master desc) as activity_rank
+              row_number() over(partition by address order by transfers_cnt desc, jetton_master desc) as activity_rank
               from pool2jetton_counts
             ),token1 as (
               select address, jetton_master from pool2jetton_ranks where activity_rank = 1
