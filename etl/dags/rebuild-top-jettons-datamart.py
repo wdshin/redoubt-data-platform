@@ -116,14 +116,8 @@ def rebuild_top_jettons_datamart():
               join jetton_wallets jw on jw.address =jt.source_wallet
               where jt.successful  = true
             ),
-            swaps as (
-             select pool_in.platform, jt1.msg_id, jt1.originated_msg_id,
-               jt1.swap_time,
-               jt1.source_owner as swap_src_owner, jt1.jetton_master as swap_src_token, 
-               jt1.amount as swap_src_amount, jt1.query_id as swap_src_query_id, jt1.created_lt as swap_src_lt,
-               
-               jt2.destination_owner as swap_dst_owner, jt2.jetton_master as swap_dst_token, 
-               jt2.amount as swap_dst_amount, jt2.query_id as swap_dst_query_id, jt2.created_lt as swap_dst_lt
+            swaps_ids as (
+             select distinct jt1.originated_msg_id, t.msg_id
               
              from transfers jt1 
              join transfers jt2 on jt1.originated_msg_id = jt2.originated_msg_id  and jt1.msg_id != jt2.msg_id and 
@@ -138,6 +132,35 @@ def rebuild_top_jettons_datamart():
                  when pool_out.sub_op is null then true
                  else jt1.sub_op = pool_out.sub_op end
              and pool_out.type = 'out' and pool_in.platform = pool_out.platform
+             cross join unnest(array[jt1.msg_id, jt2.msg_id]) as t(msg_id)
+             where jt1.created_lt < jt2.created_lt
+            ), transfers_with_ranks as (
+              select transfers.*, rank() over(partition by swaps_ids.originated_msg_id  order by created_lt asc) as action_order from transfers
+              join swaps_ids on swaps_ids.msg_id = transfers.msg_id 
+            ),
+            swaps as (
+             select pool_in.platform, jt1.msg_id, jt1.originated_msg_id,
+               jt1.swap_time,
+               jt1.source_owner as swap_src_owner, jt1.jetton_master as swap_src_token, 
+               jt1.amount as swap_src_amount, jt1.query_id as swap_src_query_id, jt1.created_lt as swap_src_lt,
+               
+               jt2.destination_owner as swap_dst_owner, jt2.jetton_master as swap_dst_token, 
+               jt2.amount as swap_dst_amount, jt2.query_id as swap_dst_query_id, jt2.created_lt as swap_dst_lt
+              
+             from transfers_with_ranks jt1 
+             join transfers_with_ranks jt2 on jt1.originated_msg_id = jt2.originated_msg_id  and jt1.msg_id != jt2.msg_id and 
+               jt1.query_id = jt2.query_id and jt1.source_owner = jt2.destination_owner and jt1.jetton_master != jt2.jetton_master 
+             join dex_pools_info pool_in on pool_in.address = jt1.destination_owner and
+             case 
+                 when pool_in.sub_op is null then true
+                 else jt1.sub_op = pool_in.sub_op end
+             and pool_in.type = 'in'
+             join dex_pools_info pool_out on pool_out.address = jt2.source_owner and
+             case
+                 when pool_out.sub_op is null then true
+                 else jt1.sub_op = pool_out.sub_op end
+             and pool_out.type = 'out' and pool_in.platform = pool_out.platform
+             where jt1.created_lt < jt2.created_lt and jt1.action_order + 1 = jt2.action_order
             ), datamart as (
             select msg_id, originated_msg_id, platform, swap_time, 
             swap_src_owner,  swap_src_token, swap_src_amount, 
