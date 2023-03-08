@@ -138,6 +138,7 @@ def rebuild_top_jettons_datamart():
                  when pool_out.sub_op is null then true
                  else jt1.sub_op = pool_out.sub_op end
              and pool_out.type = 'out' and pool_in.platform = pool_out.platform
+             where jt1.created_lt < jt2.created_lt
             ), datamart as (
             select msg_id, originated_msg_id, platform, swap_time, 
             swap_src_owner,  swap_src_token, swap_src_amount, 
