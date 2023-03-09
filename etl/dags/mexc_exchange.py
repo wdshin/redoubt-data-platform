@@ -41,16 +41,22 @@ def mexc_fetcher():
 
     def fetch_info_mexc():
         postgres_hook = PostgresHook(postgres_conn_id="ton_db")
-        to_insert = []
-        now = int(time())
-        fnz = requests.get("https://api.mexc.com/api/v3/ticker/24hr?symbol=FNZUSDT").json()
         usdt = requests.get("https://api.mexc.com/api/v3/ticker/24hr?symbol=TONUSDT").json()
+
+        fnz = requests.get("https://api.mexc.com/api/v3/ticker/24hr?symbol=FNZUSDT").json()
         fnz_ton_volume = round(float(fnz['quoteVolume']) / float(usdt['lastPrice']))
         fnz_ton_price = float(fnz['lastPrice']) / float(usdt['lastPrice'])
+
+        mega = requests.get("https://api.mexc.com/api/v3/ticker/24hr?symbol=MEGAUSDT").json()
+        mega_ton_volume = round(float(mega['quoteVolume']) / float(usdt['lastPrice']))
+        mega_ton_price = float(mega['lastPrice']) / float(usdt['lastPrice'])
+
         insert_sql = f"""INSERT INTO mexc_stat(address, check_time, symbol,
         price, market_volume_ton_24 )
          VALUES ('EQDCJL0iQHofcBBvFBHdVG233Ri2V4kCNFgfRT-gqAd3Oc86', now(), 'FNZ', 
-         {fnz_ton_price}, {fnz_ton_volume});
+         {fnz_ton_price}, {fnz_ton_volume}),
+         ('EQBf6-YoR9xylol_NwjHrLkrTFAZJCX-bsd-Xx_902OaPaBf', now(), 'MEGA', 
+         {mega_ton_volume}, {mega_ton_price});
         """
         postgres_hook.run(insert_sql, autocommit=True)
 
