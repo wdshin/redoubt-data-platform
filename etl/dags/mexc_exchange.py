@@ -56,7 +56,7 @@ def mexc_fetcher():
          VALUES ('EQDCJL0iQHofcBBvFBHdVG233Ri2V4kCNFgfRT-gqAd3Oc86', now(), 'FNZ', 
          {fnz_ton_price}, {fnz_ton_volume}),
          ('EQBf6-YoR9xylol_NwjHrLkrTFAZJCX-bsd-Xx_902OaPaBf', now(), 'MEGA', 
-         {mega_ton_volume}, {mega_ton_price});
+         {mega_ton_price}, {mega_ton_volume});
         """
         postgres_hook.run(insert_sql, autocommit=True)
 
