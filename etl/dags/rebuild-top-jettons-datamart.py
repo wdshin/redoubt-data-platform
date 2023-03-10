@@ -240,6 +240,18 @@ def rebuild_top_jettons_datamart():
         postgres_conn_id="ton_db",
         sql=[
             """
+            create or replace view view_cex_latest_data 
+            as 
+              select 'tonrocket' as platform, address, price, market_volume_ton_24
+              from ton_rocket_stat where check_time = (select max(check_time) from ton_rocket_stat)
+              union all
+              select 'mexc' as platform, address, price, market_volume_ton_24
+              from mexc_stat where check_time = (select max(check_time) from mexc_stat)
+              union all
+              select 'gateio' as platform, address, price, market_volume_ton_24
+              from gateio_stat where check_time = (select max(check_time) from gateio_stat)
+            """,
+            """
         insert into top_jettons_datamart(build_time, address, 
           creation_time, symbol, price, market_volume_ton,
           market_volume_rank, active_owners_24, total_holders           
@@ -282,24 +294,14 @@ def rebuild_top_jettons_datamart():
         ), market_volume_dex as  (
           select token, round(sum(amount_ton) / 1000000000) as market_volume_ton_dex from trades_in_ton
           group by 1
-        ), ton_rocket_latest as (
-          select address as token, price, market_volume_ton_24
-          from ton_rocket_stat where check_time = (select max(check_time) from ton_rocket_stat)
-        ), mexc_latest as (
-          select address as token, price, market_volume_ton_24
-          from mexc_stat where check_time = (select max(check_time) from mexc_stat)
-        ), gateio_latest as (
-          select address as token, price, market_volume_ton_24
-          from gateio_stat where check_time = (select max(check_time) from gateio_stat)
+        ), cex_stat as (
+          select address as token, sum(market_volume_ton_24) as market_volume_ton_24 from view_cex_latest_data
+          group by 1
         ), market_volume as (
-          select token, market_volume_ton_dex 
-          + coalesce(ton_rocket_latest.market_volume_ton_24, 0) + coalesce(mexc_latest.market_volume_ton_24, 0)
-          + coalesce(gateio_latest.market_volume_ton_24, 0)
+          select token, market_volume_ton_dex + coalesce(cex_stat.market_volume_ton_24, 0)
           as market_volume_ton
           from market_volume_dex
-          left join ton_rocket_latest using(token)
-          left join mexc_latest using(token)
-          left join gateio_latest using(token)
+          left join cex_stat using(token)
         ), market_volume_rank as (
           select *, rank() over(order by market_volume_ton desc) as market_volume_rank from market_volume
         ), last_trades_ranks as (
@@ -404,24 +406,12 @@ def rebuild_top_jettons_datamart():
         ), market_volume_dex as  (
           select platform , round(sum(amount_ton) / 1000000000) as market_volume_ton_dex from trades_in_ton
           group by 1
-        ), ton_rocket_latest as (
-          select address as token, price, market_volume_ton_24
-          from ton_rocket_stat where check_time = (select max(check_time) from ton_rocket_stat)
-        ), mexc_latest as (
-		  select address as token, price, market_volume_ton_24
-          from mexc_stat where check_time = (select max(check_time) from mexc_stat)
-        ), gateio_latest as (
-          select address as token, price, market_volume_ton_24
-          from gateio_stat where check_time = (select max(check_time) from gateio_stat)
         ), market_volume as (
           select platform , market_volume_ton_dex as market_volume_ton
           from market_volume_dex
           union all
-          select 'tonrocket' as platform, round(sum(market_volume_ton_24)) as market_volume_ton from ton_rocket_latest
-          union all
-          select 'mexc' as platform, round(sum(market_volume_ton_24)) as market_volume_ton from mexc_latest
-          union all
-          select 'gateio' as platform, round(sum(market_volume_ton_24)) as market_volume_ton from gateio_latest
+          select platform, round(sum(market_volume_ton_24)) as market_volume_ton from view_cex_latest_data
+          group by 1
         )
         select now() as build_time, platform, market_volume_ton from market_volume
         """
