@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 import os
-from typing import Optional
+from typing import Optional, Tuple, List, Dict
 
 from fastapi import FastAPI, HTTPException, Depends, Security
 from fastapi.responses import Response
@@ -16,6 +16,7 @@ import codecs
 import hashlib
 import os
 import decimal
+from time import time
 from loguru import logger
 
 
@@ -61,6 +62,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 CACHE_PREFIX = os.environ.get("API_CACHE_DIR", "/tmp/")
+NO_AUTH_MODE = bool(os.environ.get("NO_AUTH_MODE", "false"))
 
 IPFS_GATEWAY = 'https://w3s.link/ipfs/'
 
@@ -239,15 +241,20 @@ api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
 api_conn = psycopg2.connect()
 api_cursor = api_conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-def track_access(api_user: APIKey, method: str):
+def track_access(api_user: APIKey, method: str, arg0: str=None):
+    if api_user is None:
+        return
     logger.info(f"Tracking method {method} call from {api_user}")
     api_cursor.execute("""
-    insert into api_access_log(call_time, user_id, method_name)
-    values (now(), %s, %s)
-    """, (api_user, method))
+    insert into api_access_log(call_time, user_id, method_name, arg0)
+    values (now(), %s, %s, %s)
+    """, (api_user, method, arg0))
     api_conn.commit()
 
 async def get_api_key(api_key_header: str = Security(api_key_header)):
+    # for debug purposes onlu
+    if NO_AUTH_MODE:
+        return None
     # logger.info(api_key_header)
     api_cursor.execute("select * from api_keys where api_key = %s", (api_key_header,))
     res = api_cursor.fetchone()
@@ -269,3 +276,49 @@ async def dexs(api_user: APIKey = Depends(get_api_key)):
             where build_time  = (select max(build_time) from platform_volume_24_datamart)
     """)
     return list(map(PlatformInfo.from_db_row, api_cursor.fetchall()))
+
+@dataclass
+class PricePoint:
+    ts: int
+    price: float
+    volume: int
+
+
+@app.get("/v1/jettons/{address}/price/history", tags=["jettons"], response_model=list[PricePoint])
+async def price_history(address: str, start_time: Optional[int] = None, end_time: Optional[int] = None,
+                        api_user: APIKey = Depends(get_api_key)) -> list[PricePoint]:
+    """
+    Returns price history for Jetton identified by {address} param. Each price point consist of
+    timestamp, price value and 24h volume in TON. ``start_time`` and ``end_time`` query params
+    could be passed to specify interval. ``start_time`` must be less than ``end_time`` (``end_time`` represents
+    end of the interval). Maximum allowed interval length is 7 days. Default value for ``end_time``
+    is current time, default value for ``start_time`` is 7 days before ``end_time``.
+
+    Prices and market volumes returned averaged with 1 hour window.
+    """
+
+    WEEK = 86400 * 7
+
+    track_access(api_user, "/v1/jettons/{address}/price/history", address)
+    logger.info(f"History for {address} {start_time} {end_time}")
+    if end_time is None:
+        end_time = int(time())
+    if start_time is None:
+        start_time = end_time - WEEK
+    if end_time < start_time:
+        raise HTTPException(status_code=400, detail="start_time must be < end_time")
+    if (end_time - start_time) / 86400 > 7:
+        raise HTTPException(status_code=400, detail="Interval between start_time and end_time is too large")
+    api_cursor.execute("""
+        select extract(epoch from date_trunc('hour', build_time)) as ts, 
+        avg(price) as price, round(avg(market_volume_ton)) as volume 
+        from top_jettons_datamart tjd 
+        where address =%s
+        and build_time <= to_timestamp(%s) and build_time > to_timestamp(%s)
+        group by 1 
+        order by 1 desc
+    """, (address, end_time, start_time))
+    items = []
+    for row in api_cursor.fetchall():
+        items.append(PricePoint(ts=row['ts'], price=row['price'], volume=row['volume']))
+    return items
