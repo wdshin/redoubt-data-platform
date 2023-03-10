@@ -62,7 +62,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 CACHE_PREFIX = os.environ.get("API_CACHE_DIR", "/tmp/")
-NO_AUTH_MODE = bool(os.environ.get("NO_AUTH_MODE", "false"))
+NO_AUTH_MODE = os.environ.get("NO_AUTH_MODE", "false") == True
 
 IPFS_GATEWAY = 'https://w3s.link/ipfs/'
 
