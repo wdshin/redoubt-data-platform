@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 import os
+from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Depends, Security
 from fastapi.responses import Response
@@ -66,7 +67,7 @@ IPFS_GATEWAY = 'https://w3s.link/ipfs/'
 @dataclass
 class ValueWithTrend:
     value: float
-    percent: int
+    percent: Optional[int]
 
     @classmethod
     def create(cls, latest, prev):
@@ -110,13 +111,24 @@ class PlatformInfo:
             marketVolume=item['market_volume_ton'])
 
 
+@dataclass
+class TopJettonsInfo:
+    jettons: list[TokenInfo]
+    platforms: list[PlatformInfo]
+    total: int
 
-@app.get("/v1/jettons/top")
-async def jettons():
+MIN_MARKET_VOLUME = 300
+
+@app.get("/v1/jettons/top", response_model=TopJettonsInfo, tags=["jettons"])
+async def jettons() -> TopJettonsInfo:
+    """
+    Returns overall stats for top jettons and exchanges (both DEXs and CEXs). Only jettons 
+    with at least 300 TON 24h market volume included in the list.
+    """
     conn = psycopg2.connect()
     cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
-        cursor.execute("""
+        cursor.execute(f"""
         with latest as (
           select dm.*
                 from top_jettons_datamart dm
@@ -134,7 +146,7 @@ async def jettons():
         from latest
         left join prev using(address)
         left join jetton_master jm using(address)
-        where latest.market_volume_ton > 300 or latest.market_volume_rank  < 10
+        where latest.market_volume_ton > {MIN_MARKET_VOLUME} or latest.market_volume_rank  < 10
         order by latest.market_volume_rank asc -- limit 10
         """)
         jettons = list(map(TokenInfo.from_db_row, cursor.fetchall()))
@@ -147,11 +159,11 @@ async def jettons():
         platforms = list(map(PlatformInfo.from_db_row, cursor.fetchall()))
 
         cursor
-        return {
-            'jettons': jettons,
-            'platforms': platforms,
-            'total': sum(map(lambda x: x.marketVolume, platforms))
-        }
+        return TopJettonsInfo(
+            jettons=jettons,
+            platforms=platforms,
+            total=sum(map(lambda x: x.marketVolume, platforms))
+        )
     finally:
         cursor.close()
         conn.close
@@ -192,8 +204,11 @@ def with_content_type(content):
         'Cache-Control': 'public, max-age=86400'
     })
 
-@app.get("/v1/jettons/image/{address}", response_class=Response)
+@app.get("/v1/jettons/image/{address}", response_class=Response, tags=["jettons"])
 async def image(address):
+    """
+    Returns jetton image as binary content.
+    """
     cached = from_cache(address)
     if cached:
         return with_content_type(cached)
