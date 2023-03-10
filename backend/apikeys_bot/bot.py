@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS api_keys (
             create_time timestamp with time zone NOT NULL,
             api_key varchar,
             user_id varchar,
+            chat_id varchar,
             username varchar,
             title varchar,
             is_bot bool,
@@ -32,7 +33,7 @@ create unique index if not exists api_keys_idx2 on api_keys(user_id);
 def generate_key() -> str:
     return secrets.token_hex(32)
 
-async def get_key(user, refresh=False) -> str:
+async def get_key(user, chat_id, refresh=False) -> str:
     conn = psycopg2.connect()
     cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
@@ -46,9 +47,9 @@ async def get_key(user, refresh=False) -> str:
             key = generate_key()
             title = " ".join(list(filter(lambda x: x is not None, [user.first_name, user.last_name])))
             cursor.execute("""
-            insert into api_keys(create_time, api_key, user_id, username, title, is_bot, language_code)
-            values (now(), %s, %s, %s, %s, %s, %s)
-            """, (key, str(user.id), user.username, title, user.is_bot, user.language_code))
+            insert into api_keys(create_time, api_key, user_id, chat_id, username, title, is_bot, language_code)
+            values (now(), %s, %s, %s, %s, %s, %s, %s)
+            """, (key, str(user.id), str(chat_id), user.username, title, user.is_bot, user.language_code))
             conn.commit()
             return key
         logging.info(res)
@@ -61,14 +62,14 @@ async def get_key(user, refresh=False) -> str:
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
     logging.info(f"/start from {user}")
-    key = await get_key(user, refresh=False)
+    key = await get_key(user, update.effective_message.chat_id, refresh=False)
 
     await update.message.reply_html(f"Hi {user.mention_html()}! Here is your API key: <pre>{key}</pre>")
 
 async def refresh(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
     logging.info(f"/refresh from {user}")
-    key = await get_key(user, refresh=True)
+    key = await get_key(user, update.effective_message.chat_id, refresh=True)
 
     await update.message.reply_html(f"Hi {user.mention_html()}! Here is your updated API key: <pre>{key}</pre>")
 
