@@ -242,7 +242,7 @@ async def get_api_key(api_key_header: str = Security(api_key_header)):
     return res['user_id']
 
 
-@app.get("/v1/dex", tags=["DEX"])
+@app.get("/v1/dex", tags=["DEX"], response_model=list[PlatformInfo])
 async def dexs(api_user: APIKey = Depends(get_api_key)):
     """
     Returns basic information about DEXs: market volume and TVL.
