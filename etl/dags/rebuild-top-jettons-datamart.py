@@ -252,8 +252,6 @@ def rebuild_top_jettons_datamart():
               from gateio_stat where check_time = (select max(check_time) from gateio_stat)
             """,
             """
-            """,
-            """
             create or replace view view_trades24h_enriched
             as
               select swaps.*, 
