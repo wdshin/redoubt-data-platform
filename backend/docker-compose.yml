@@ -1,6 +1,6 @@
 services:
   api:
-    build: ./
+    build: ./api
     restart: "always"
     ports:
       - 8082:8082
@@ -10,6 +10,13 @@ services:
       - ./cache:/var/lib/cache
     environment:
       API_CACHE_DIR: /var/lib/cache/
+  apikeys_bot:
+    build: ./apikeys_bot
+    restart: "always"
+    env_file:
+      - db_config_apikeysbot.env
+    environment:
+      API_TOKEN: ${API_TOKEN}
 networks:
   default:
     name: ton-indexer_default
