@@ -1,9 +1,10 @@
 #!/usr/bin/env python
 import os
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends, Security
 from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security.api_key import APIKeyQuery, APIKeyCookie, APIKeyHeader, APIKey
 import magic
 import aiohttp
 import psycopg2
@@ -14,8 +15,34 @@ import codecs
 import hashlib
 import os
 import decimal
+from loguru import logger
 
-app = FastAPI()
+
+app = FastAPI(
+    title="re:doubt Public API",
+    version="0.2.0",
+    description="""
+[re:doubt](https://redoubt.online/) Public API contains a bunch of useful methods related to TON blockchain high-level information.
+
+
+API is free but simple authorisation is required to access the API. To get API key send ``/start`` command
+to [@RedoubtAPIBot](https://t.me/RedoubtAPIBot). API key has to be passed in ``X-API-Key`` HTTP header .For now there are no rate-limits but it could be changed 
+in the near future.    
+    """,
+    openapi_tags=[
+        {
+            "name": "DEX",
+            "description": """
+Endpoint related to DEXs. Supported DEXs:
+* [Megaton](https://megaton.fi/)
+* [ston.fi](https://ston.fi/)
+* [DeDust](https://dedust.io/dex/swap)
+* [Tegro](https://tegro.finance/)
+* [Tonswap](https://tonswap.org/swap/tokens)
+            """
+        }
+    ]
+)
 origins = [
     "http://localhost:3006",
     "http://localhost:3000",
@@ -189,3 +216,41 @@ async def image(address):
     finally:
         cursor.close()
         conn.close()
+
+
+API_KEY_NAME = "X-API-Key"
+api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
+
+api_conn = psycopg2.connect()
+api_cursor = api_conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+def track_access(api_user: APIKey, method: str):
+    logger.info(f"Tracking method {method} call from {api_user}")
+    api_cursor.execute("""
+    insert into api_access_log(call_time, user_id, method_name)
+    values (now(), %s, %s)
+    """, (api_user, method))
+    api_conn.commit()
+
+async def get_api_key(api_key_header: str = Security(api_key_header)):
+    # logger.info(api_key_header)
+    api_cursor.execute("select * from api_keys where api_key = %s", (api_key_header,))
+    res = api_cursor.fetchone()
+    if not res:
+        raise HTTPException(status_code=403, detail="X-API-Key header is missing or wrong")
+
+    return res['user_id']
+
+
+@app.get("/v1/dex", tags=["DEX"])
+async def dexs(api_user: APIKey = Depends(get_api_key)):
+    """
+    Returns basic information about DEXs: market volume and TVL.
+    """
+    track_access(api_user, "/v1/dex")
+    api_cursor.execute("""
+    select dm.*
+            from platform_volume_24_datamart dm
+            where build_time  = (select max(build_time) from platform_volume_24_datamart)
+    """)
+    return list(map(PlatformInfo.from_db_row, api_cursor.fetchall()))
