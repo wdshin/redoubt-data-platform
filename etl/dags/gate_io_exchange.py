@@ -41,10 +41,15 @@ def gateio_fetcher():
 
     def fetch_info_gateio():
         postgres_hook = PostgresHook(postgres_conn_id="ton_db")
+        # Get USDT / TON price from existing datamart using oUSDT price
+        usdt_price = float(postgres_hook.get_first("""
+        select price from top_jettons_datamart tjd 
+        where address = 'EQC_1YoM8RBixN95lz7odcF3Vrkc_N8Ne7gQi7Abtlet_Efi'
+        order by build_time desc limit 1
+        """)[0])
         fnz = requests.get("https://api.gateio.ws/api/v4/spot/tickers?currency_pair=FNZ_USDT").json()[0]
-        usdt = requests.get("https://api.gateio.ws/api/v4/spot/tickers?currency_pair=TONCOIN_USDT").json()[0]
-        fnz_ton_volume = round(float(fnz['quote_volume']) / float(usdt['last']))
-        fnz_ton_price = float(fnz['last']) / float(usdt['last'])
+        fnz_ton_volume = round(float(fnz['quote_volume']) * usdt_price)
+        fnz_ton_price = float(fnz['last']) * usdt_price
         insert_sql = f"""INSERT INTO gateio_stat(address, check_time, symbol,
         price, market_volume_ton_24 )
          VALUES ('EQDCJL0iQHofcBBvFBHdVG233Ri2V4kCNFgfRT-gqAd3Oc86', now(), 'FNZ', 
