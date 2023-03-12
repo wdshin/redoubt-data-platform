@@ -157,7 +157,7 @@ def data_quality_watchdog():
             prev_tvl > {alerts_tvl_delta_min_pool})        
         """
         for _, row in postgres_hook.get_pandas_df(sql).iterrows():
-            send(f"❗️ {row.type}: {row.jetton_a}/{row.jetton_b} on {row.platform}, {row.tvl_ton} TON ({row.address})")
+            send(f"❗️ {row.type}: #{row.jetton_a}_{row.jetton_b} on {row.platform}, {row.tvl_ton} TON ({row.address})")
 
 
     tvl_alerts_task = PythonOperator(
