@@ -43,8 +43,25 @@ def rebuild_nft_datamarts():
         ]
     )
 
+    deals_mview = PostgresOperator(
+        task_id="deals_mview",
+        postgres_conn_id="ton_db",
+        sql=[
+            """
+        create materialized view if not exists mview_nft_deals
+        as
+        select nis.address as sale_address, nt.nft_item as address, to_timestamp(utime) as deal_time, nis."owner" as seller,  nt.new_owner  as buyer, price from nft_transfers nt
+        join nft_item_sale nis on nt.current_owner = nis.address 
+        where successful  and nis."owner" is not null and nt.new_owner != nis."owner"                            
+        """,
+            """
+        refresh materialized view mview_nft_deals;        
+            """
+        ]
+    )
 
-    actual_owners_mview
+
+    actual_owners_mview >> deals_mview
 
 
 
