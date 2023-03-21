@@ -46,7 +46,8 @@ PAIRS = {
         "address": "EQBlU_tKISgpepeMFT9t3xTDeiVmo25dW_4vUOl6jId_BNIj",
         "token_position": 0,
         "token": "KOTE",
-        "decimals": 0 # actually nKOTE
+        "decimals": 0, # actually nKOTE
+        "price_multiplier": 1000000000  # convert from nKOTE/TON to KOTE/TON
     },
     "TNX-TONCOIN": {
         "address": "EQB-ajMyi5-WKIgOHnbOGApfckUGbl6tDk3Qt8PKmb-xLAvp",
@@ -162,6 +163,8 @@ def ton_rocket_fetcher():
             ton_key = 'quoteVolume24h' if pair_info['token_position'] == 0 else 'mainVolume24h'
             volume_ton = round(pair[ton_key])
             price_avg = (pair['buyPrice'] + pair['sellPrice']) / 2
+            if 'price_multiplier' in pair_info:
+                price_avg = price_avg * pair_info['price_multiplier']
             if pair_info['token_position'] == 1:
                 price_avg = 1. / price_avg
             

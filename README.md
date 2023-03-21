@@ -14,6 +14,7 @@ ETL based on Airflow. Jobs list:
 * [Gate.io indexer](etl/dags/gate_io_exchange.py) - index last 24h stats from Gate.io (FNZ trades)
 * [Data quality watchdog](etl/dags/data_quality_watchdog.py) - data quality watchdog
 * [TVL datamart updater](etl/dags/tvl-datamart.py) - updates TVL values for DEXs pools
+* [NFT datamarts updater](etl/dags/rebuild-nft-datamarts.py) - updates NFT-related datamarts
 
 Variables and connectins:
 * ``contracts_executor_url`` - url for [contracts-executor](https://github.com/re-doubt/ton-indexer/tree/master/contracts-executor)
