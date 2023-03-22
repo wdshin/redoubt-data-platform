@@ -118,14 +118,15 @@ class TopJettonsInfo:
     jettons: list[TokenInfo]
     platforms: list[PlatformInfo]
     total: int
+    minMarketVolume: int
 
-MIN_MARKET_VOLUME = 300
+MIN_MARKET_VOLUME = os.getenv("MIN_MARKET_VOLUME")
 
 @app.get("/v1/jettons/top", response_model=TopJettonsInfo, tags=["jettons"])
 async def jettons() -> TopJettonsInfo:
     """
     Returns overall stats for top jettons and exchanges (both DEXs and CEXs). Only jettons 
-    with at least 300 TON 24h market volume included in the list.
+    with at least MIN_MARKET_VOLUME TON 24h market volume included in the list.
     """
     conn = psycopg2.connect()
     cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -164,7 +165,8 @@ async def jettons() -> TopJettonsInfo:
         return TopJettonsInfo(
             jettons=jettons,
             platforms=platforms,
-            total=sum(map(lambda x: x.marketVolume, platforms))
+            total=sum(map(lambda x: x.marketVolume, platforms)),
+            minMarketVolume=MIN_MARKET_VOLUME
         )
     finally:
         cursor.close()
