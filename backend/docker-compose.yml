@@ -10,6 +10,7 @@ services:
       - ./cache:/var/lib/cache
     environment:
       API_CACHE_DIR: /var/lib/cache/
+      MIN_MARKET_VOLUME: ${MIN_MARKET_VOLUME:-300}
   apikeys_bot:
     build: ./apikeys_bot
     restart: "always"
